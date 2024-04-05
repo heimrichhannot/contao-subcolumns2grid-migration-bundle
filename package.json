@@ -1,0 +1,32 @@
+{
+    "name": "heimrichhannot/contao-subcolumns2grid-migration-bundle",
+    "type": "contao-bundle",
+    "description": "This bundle makes getting rid of felixpfeiffer's subcolumns module and it's H&H successors less painful.",
+    "license": "LGPL-3.0-or-later",
+    "authors": [
+        {
+            "name": "Heimrich & Hannot GmbH",
+            "email": "digitales@heimrich-hannot.de",
+            "homepage": "https://www.heimrich-hannot.de",
+            "role": "Developer"
+        },
+        {
+            "name": "Eric Gesemann",
+            "email": "e.gesemann@heimrich-hannot.de",
+            "homepage": "https://www.heimrich-hannot.de",
+            "role": "Developer"
+        }
+    ],
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "contao/core-bundle": "^4.13"
+    },
+    "autoload": {
+        "psr-4": {
+            "HeimrichHannot\\Subcolumns2Grid\\": "src/"
+        }
+    },
+    "extra": {
+        "contao-manager-plugin": "HeimrichHannot\\Subcolumns2Grid\\ContaoManager\\Plugin"
+    }
+}
