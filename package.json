@@ -1,7 +1,7 @@
 {
     "name": "heimrichhannot/contao-subcolumns2grid-migration-bundle",
     "type": "contao-bundle",
-    "description": "This bundle makes getting rid of felixpfeiffer's subcolumns module and it's H&H successors less painful.",
+    "description": "This bundle makes getting rid of felixpfeiffer's subcolumns module and its H&H successors less painful.",
     "license": "LGPL-3.0-or-later",
     "authors": [
         {
