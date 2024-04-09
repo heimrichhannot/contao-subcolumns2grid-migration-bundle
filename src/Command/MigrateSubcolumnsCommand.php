@@ -28,7 +28,7 @@ class MigrateSubcolumnsCommand extends Command
     protected const CLASS_TYPE_OFFSET = 'offset';
     protected const CLASS_TYPE_ORDER = 'order';
     protected const BREAKPOINTS = ['xs', 'sm', 'md', 'lg', 'xl', 'xxl'];
-    protected const SMALLEST_PLACEHOLDER = '{smallest}';
+    protected const UNSPECIFIC_PLACEHOLDER = '#{._.}#';
 
     protected Connection $connection;
     protected ContaoFramework $framework;
@@ -42,21 +42,22 @@ class MigrateSubcolumnsCommand extends Command
 
     protected function configure(): void
     {
-        $this->setName('sub2grid:migrate')->setDescription('Migrates existing subcolumns to grid columns.');
-        $this->addOption(
-            'from-subcolumns-bootstrap-bundle',
-            'b',
-            InputOption::VALUE_OPTIONAL,
-            'Attempt to migrate from the SubColumnsBootstrapBundle, no matter if it\'s installed.',
-            false
-        );
-        $this->addOption(
-            'from-subcolumns-module',
-            'm',
-            InputOption::VALUE_OPTIONAL,
-            'Attempt to migrate from the SubColumns module, no matter if it\'s installed.',
-            false
-        );
+        $this->setName('sub2grid:migrate')
+            ->setDescription('Migrates existing subcolumns to grid columns.')
+            ->addOption(
+                'from-subcolumns-bootstrap-bundle',
+                'b',
+                InputOption::VALUE_OPTIONAL,
+                'Attempt to migrate from the SubColumnsBootstrapBundle, no matter if it\'s installed.',
+                false
+            )->addOption(
+                'from-subcolumns-module',
+                'm',
+                InputOption::VALUE_OPTIONAL,
+                'Attempt to migrate from the SubColumns module, no matter if it\'s installed.',
+                false
+            )
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -115,14 +116,17 @@ class MigrateSubcolumnsCommand extends Command
     protected function fetchConfigSubcolumns(): ?array
     {
         if (empty($GLOBALS['TL_SUBCL']) || !is_array($GLOBALS['TL_SUBCL'])) {
-            throw new \OutOfBoundsException('No subcolumns found in $GLOBALS.');
+            throw new \OutOfBoundsException('No subcolumns found in $GLOBALS["TL_SUBCL"].');
         }
 
         $colsetDefinitions = [];
 
         foreach ($GLOBALS['TL_SUBCL'] as $profileName => $profile)
         {
-            if (!is_array($profile) || \strpos($profileName, 'yaml') !== false) {
+            if (!is_array($profile)
+                || \strpos($profileName, 'yaml') !== false
+                || empty($profile['sets']))
+            {
                 continue;
             }
 
@@ -133,13 +137,8 @@ class MigrateSubcolumnsCommand extends Command
             $gap = $profile['gap'] ?? null;
             $files = $profile['files'] ?? null;
 
-
-            /**
-             * @var array<array{0: string, 1: string}> $colsConfig
-             */
             foreach ($profile['sets'] as $setName => $globalColsConfig)
             {
-                /** @var array<string, array<ColSizeDefinition>> $sizes */
                 $sizes = $this->parseGlobalSets($globalColsConfig);
 
                 $colset = ColSetDefinition::create()
@@ -154,6 +153,10 @@ class MigrateSubcolumnsCommand extends Command
         return $colsetDefinitions;
     }
 
+    /**
+     * @param array $colsConfig
+     * @return array<string, array<ColSizeDefinition>>
+     */
     protected function parseGlobalSets(array $colsConfig): array
     {
         /** @var array<string, array<ColSizeDefinition>> $sizes */
@@ -172,7 +175,7 @@ class MigrateSubcolumnsCommand extends Command
 
             foreach ($colClasses as $objColClass)
             {
-                $breakpoint = $objColClass->breakpoint ?: self::SMALLEST_PLACEHOLDER;
+                $breakpoint = $objColClass->breakpoint ?: self::UNSPECIFIC_PLACEHOLDER;
 
                 if (!isset($sizes[$breakpoint]))
                 {
@@ -201,17 +204,30 @@ class MigrateSubcolumnsCommand extends Command
             $colIndex++;
         }
 
-        $this->applyFallbackSizes($sizes);
+        $this->applyUnspecificSizes($sizes);
 
         return $sizes;
     }
 
-    protected function applyFallbackSizes(array &$sizes)
+    /**
+     * An unspecific css class is a class, that does not specify a breakpoint,
+     *   e.g. col-12, col-offset-8, offset-4, order-3
+     *
+     * If no breakpoint is specified, these classes are applied equivalently to the columns with the smallest
+     *   breakpoint which are already present.
+     *
+     * Unspecific classes do not overwrite their specific counterparts. New column definitions are created in case
+     *   there is no equivalent column defined due to missing specific classes.
+     *
+     * @param array $sizes
+     * @return void
+     */
+    protected function applyUnspecificSizes(array &$sizes)
     {
-        $smallestSizeCols = $sizes[self::SMALLEST_PLACEHOLDER] ?? [];
-        unset($sizes[self::SMALLEST_PLACEHOLDER]);
+        $unspecificCols = $sizes[self::UNSPECIFIC_PLACEHOLDER] ?? [];
+        unset($sizes[self::UNSPECIFIC_PLACEHOLDER]);
 
-        if (empty($smallestSizeCols)) {
+        if (empty($unspecificCols)) {
             return;
         }
 
@@ -228,37 +244,31 @@ class MigrateSubcolumnsCommand extends Command
 
         if ($breakpointValues[$smallestKnownBreakpoint] - 1 >= 0)
             // the smallest available breakpoint has not yet been set,
-            // therefore we can just set the smallest undefined size to the smallest breakpoint
+            // therefore we just assign the unspecific classes to the smallest breakpoint (xs)
         {
-            foreach ($smallestSizeCols as $col) {
-                $col->setBreakpoint(self::BREAKPOINTS[0]);
-            }
-            $sizes[self::BREAKPOINTS[0]] = $smallestSizeCols;
+            $sizes[self::BREAKPOINTS[0]] = $unspecificCols;
             return;
         }
 
-        // otherwise, the smallest breakpoint is already defined,
-        // therefore we need to apply the smallest undefined size as fallback to the smallest breakpoint
+        // otherwise, the smallest breakpoint is already defined with css classes incorporating specific sizes,
+        // therefore we need to apply unspecific size as fallback to the smallest breakpoint
 
-        $definedSizeCols = $sizes[self::BREAKPOINTS[0]] ?? [];
+        $specificCols = $sizes[self::BREAKPOINTS[0]] ?? [];
 
-        $minSize = \min(\count($definedSizeCols), \count($smallestSizeCols));
-        $fallback = \array_values(\array_slice($smallestSizeCols, 0, $minSize));
-        $values = \array_values(\array_slice($definedSizeCols, 0, $minSize));
+        $sizes[self::BREAKPOINTS[0]] = $unspecificCols;
 
-        for ($i = 0; $i < $minSize; $i++)
+        foreach ($specificCols as $colIndex => $specificCol)
         {
-            $f = $fallback[$i];
-            $v = $values[$i];
+            $unspecificCol = $sizes[self::BREAKPOINTS[0]][$colIndex] ?? null;
 
-            if (null === $v->getSpan())   $v->setSpan($f->getSpan());
-            if (null === $v->getOffset()) $v->setOffset($f->getOffset());
-            if (null === $v->getOrder())  $v->setOrder($f->getOrder());
-        }
+            if (null === $unspecificCol) {
+                $sizes[self::BREAKPOINTS[0]][$colIndex] = $specificCol;
+                continue;
+            }
 
-        if (\count($smallestSizeCols) > $minSize)
-        {
-            $sizes[self::BREAKPOINTS[0]] = \array_merge($values, \array_slice($smallestSizeCols, $minSize));
+            if ($specificCol->getSpan()) $unspecificCol->setSpan($specificCol->getSpan() ?? null);
+            if ($specificCol->getOffset()) $unspecificCol->setOffset($specificCol->getOffset() ?? null);
+            if ($specificCol->getOrder()) $unspecificCol->setOrder($specificCol->getOrder() ?? null);
         }
     }
 
@@ -271,7 +281,8 @@ class MigrateSubcolumnsCommand extends Command
 
             $matches = [];
 
-            if (!\preg_match_all("/(?P<type>col|col-offset|offset|order)(?:-(?P<breakpoint>xxs|xs|sm|md|lg|xl|xxl))?(?:-(?P<width>\d+))?/i", $strClass, $matches))
+            $rx = "/(?P<type>(?:col-)?offset|col|order)(?:-(?P<breakpoint>xxs|xs|sm|md|lg|xl|xxl))?(?:-(?P<width>\d+))?/i";
+            if (!\preg_match_all($rx, $strClass, $matches))
             {
                 $customClasses[] = $strClass;
                 return null;
@@ -286,6 +297,8 @@ class MigrateSubcolumnsCommand extends Command
 
             $class->class = $strClass;
             $class->breakpoint = $matches['breakpoint'][0] ?? '';
+            $class->width = $matches['width'][0] ?? '';
+
             $type = $matches['type'][0] ?? self::CLASS_TYPE_COL;
             $class->type = \strpos($type, 'offset') !== false
                 ? self::CLASS_TYPE_OFFSET : (
@@ -293,7 +306,6 @@ class MigrateSubcolumnsCommand extends Command
                     ? self::CLASS_TYPE_ORDER
                     : self::CLASS_TYPE_COL
                 );
-            $class->width = $matches['width'][0] ?? '';
 
             return $class;
         };
