@@ -1,6 +1,7 @@
 <?php
 
-use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
+namespace HeimrichHannot\Subcolumns2Grid;
+
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 
 class HeimrichHannotSubcolumns2GridMigrationBundle extends Bundle
