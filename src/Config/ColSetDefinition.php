@@ -12,7 +12,7 @@ class ColSetDefinition implements \Countable
     protected string $insideClass = 'inside';
     protected bool $published;
     protected string $cssID;
-    protected array $sizes = [];
+    protected array $columnSizes = [];
 
     public function getName(): string
     {
@@ -82,17 +82,23 @@ class ColSetDefinition implements \Countable
 
     public function getSizes(): array
     {
-        return array_keys($this->sizes);
+        return array_keys($this->columnSizes);
     }
 
-    public function addSize(ColSizeDefinition ...$sizes): self
+    public function addSize(string $breakpoint, ColSizeDefinition $size): self
     {
-        foreach ($sizes as $size) {
-            if (empty($size->getBreakpoint())) {
-                throw new \InvalidArgumentException('ColSizeDefinition->breakpoint must not be empty.');
-            }
-            $this->sizes[$size->getBreakpoint()] = $size;
-        }
+        $this->columnSizes[$breakpoint] = $size;
+        return $this;
+    }
+
+    public function getColumnSizes(): array
+    {
+        return $this->columnSizes;
+    }
+
+    public function setColumnSizes(array $sizes): self
+    {
+        $this->columnSizes = $sizes;
         return $this;
     }
 

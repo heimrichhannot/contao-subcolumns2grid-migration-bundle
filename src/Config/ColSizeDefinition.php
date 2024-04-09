@@ -9,7 +9,6 @@ class ColSizeDefinition
     protected ?string $order = null;
     protected ?string $verticalAlign = null;
     protected string $customClasses = '';
-    protected string $breakpoint;
 
     public function getSpan(): string
     {
@@ -66,17 +65,6 @@ class ColSizeDefinition
     public function setCustomClasses(string $customClasses): self
     {
         $this->customClasses = $customClasses;
-        return $this;
-    }
-
-    public function getBreakpoint(): ?string
-    {
-        return $this->breakpoint ?? null;
-    }
-
-    public function setBreakpoint(string $breakpoint): self
-    {
-        $this->breakpoint = $breakpoint;
         return $this;
     }
 

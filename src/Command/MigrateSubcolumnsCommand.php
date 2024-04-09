@@ -27,7 +27,8 @@ class MigrateSubcolumnsCommand extends Command
     protected const CLASS_TYPE_COL = 'col';
     protected const CLASS_TYPE_OFFSET = 'offset';
     protected const CLASS_TYPE_ORDER = 'order';
-    protected const BREAKPOINTS = ['xxs', 'xs', 'sm', 'md', 'lg', 'xl', 'xxl'];
+    protected const BREAKPOINTS = ['xs', 'sm', 'md', 'lg', 'xl', 'xxl'];
+    protected const SMALLEST_PLACEHOLDER = '{smallest}';
 
     protected Connection $connection;
     protected ContaoFramework $framework;
@@ -74,7 +75,7 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         if ($from = $config->getFrom()) {
-            $io->success(
+            $io->info(
                 sprintf('Migrating from %s',
                 $from === MigrationConfig::FROM_SUBCOLUMNS_MODULE
                     ? 'SubColumns module'
@@ -87,9 +88,9 @@ class MigrateSubcolumnsCommand extends Command
             return Command::FAILURE;
         }
 
-        if ($config->hasFetch(MigrationConfig::FETCH_CONFIG))
+        if ($config->hasFetch(MigrationConfig::FETCH_GLOBALS))
         {
-            $io->success('Fetching definitions from config.');
+            $io->comment('Fetching definitions from globals.');
             try {
                 $configFetch = $this->fetchConfigSubcolumns();
             } catch (\OutOfBoundsException $e) {
@@ -121,7 +122,7 @@ class MigrateSubcolumnsCommand extends Command
 
         foreach ($GLOBALS['TL_SUBCL'] as $profileName => $profile)
         {
-            if (!is_array($profile)) {
+            if (!is_array($profile) || \strpos($profileName, 'yaml') !== false) {
                 continue;
             }
 
@@ -136,10 +137,16 @@ class MigrateSubcolumnsCommand extends Command
             /**
              * @var array<array{0: string, 1: string}> $colsConfig
              */
-            foreach ($profile['sets'] as $setName => $colsConfig)
+            foreach ($profile['sets'] as $setName => $globalColsConfig)
             {
-                $colset = $this->parseConfigSets($colsConfig);
-                $colset->setName($setName); ## todo: give improved name
+                /** @var array<string, array<ColSizeDefinition>> $sizes */
+                $sizes = $this->parseGlobalSets($globalColsConfig);
+
+                $colset = ColSetDefinition::create()
+                    ->setPublished(true)
+                    ->setColumnSizes($sizes)
+                    ->setName($setName); ## todo: give improved name
+
                 $colsetDefinitions[] = $colset;
             }
         }
@@ -147,11 +154,8 @@ class MigrateSubcolumnsCommand extends Command
         return $colsetDefinitions;
     }
 
-    protected function parseConfigSets(array $colsConfig)
+    protected function parseGlobalSets(array $colsConfig): array
     {
-        $definition = ColSetDefinition::create()
-            ->setPublished(true);
-
         /** @var array<string, array<ColSizeDefinition>> $sizes */
         $sizes = [];
 
@@ -168,18 +172,17 @@ class MigrateSubcolumnsCommand extends Command
 
             foreach ($colClasses as $objColClass)
             {
-                $breakpoint = $objColClass->breakpoint ?: '{smallest}';
+                $breakpoint = $objColClass->breakpoint ?: self::SMALLEST_PLACEHOLDER;
 
                 if (!isset($sizes[$breakpoint]))
                 {
-                    $sizes[$objColClass->breakpoint] = [];
+                    $sizes[$breakpoint] = [];
                 }
 
-                $sizes[$objColClass->breakpoint][$colIndex] ??= ColSizeDefinition::create()
-                    ->setBreakpoint($objColClass->breakpoint)
+                $sizes[$breakpoint][$colIndex] ??= ColSizeDefinition::create()
                     ->setCustomClasses(\implode(' ', $customClasses));
 
-                $col = $sizes[$objColClass->breakpoint][$colIndex];
+                $col = $sizes[$breakpoint][$colIndex];
 
                 switch ($objColClass->type)
                 {
@@ -193,64 +196,84 @@ class MigrateSubcolumnsCommand extends Command
                         $col->setOrder($objColClass->width);
                         break;
                 }
-
-                $sizes[] = $col;
             }
 
             $colIndex++;
         }
 
+        $this->applyFallbackSizes($sizes);
+
+        return $sizes;
+    }
+
+    protected function applyFallbackSizes(array &$sizes)
+    {
+        $smallestSizeCols = $sizes[self::SMALLEST_PLACEHOLDER] ?? [];
+        unset($sizes[self::SMALLEST_PLACEHOLDER]);
+
+        if (empty($smallestSizeCols)) {
+            return;
+        }
+
         $breakpointValues = \array_flip(self::BREAKPOINTS);
 
-        $smallestSize = $sizes['smallest'] ?? [];
-        unset($sizes['smallest']);
-
-        if (!empty($smallestSize))
+        $smallestKnownBreakpoint = 'xxl';
+        foreach (\array_keys($sizes) as $breakpoint)
         {
-            $smallestKnownBreakpoint = 'xxl';
-            foreach (\array_keys($sizes) as $breakpoint)
+            if ($breakpointValues[$breakpoint] < $breakpointValues[$smallestKnownBreakpoint])
             {
-                if ($breakpointValues[$breakpoint] < $breakpointValues[$smallestKnownBreakpoint])
-                {
-                    $smallestKnownBreakpoint = $breakpoint;
-                }
-            }
-
-            $evenSmaller = $breakpointValues[$smallestKnownBreakpoint] - 1;
-            if ($evenSmaller >= 0)
-            {
-                $sizes[self::BREAKPOINTS[0]] = $smallestSize;
-            }
-            else
-            {
-                $xxs = $sizes[$smallestKnownBreakpoint];
-                if (null === $xxs->getSpan())   $xxs->setSpan($smallestSize->getSpan());
-                if (null === $xxs->getOffset()) $xxs->setOffset($smallestSize->getOffset());
-                if (null === $xxs->getOrder())  $xxs->setOrder($smallestSize->getOrder());
+                $smallestKnownBreakpoint = $breakpoint;
             }
         }
 
-        \uasort($sizes, static function ($a, $b) use ($breakpointValues) {
-            return $breakpointValues[$a->getBreakpoint()] <=> $breakpointValues[$b->getBreakpoint()];
-        });
+        if ($breakpointValues[$smallestKnownBreakpoint] - 1 >= 0)
+            // the smallest available breakpoint has not yet been set,
+            // therefore we can just set the smallest undefined size to the smallest breakpoint
+        {
+            foreach ($smallestSizeCols as $col) {
+                $col->setBreakpoint(self::BREAKPOINTS[0]);
+            }
+            $sizes[self::BREAKPOINTS[0]] = $smallestSizeCols;
+            return;
+        }
 
-        $definition->addSize(...$sizes);
+        // otherwise, the smallest breakpoint is already defined,
+        // therefore we need to apply the smallest undefined size as fallback to the smallest breakpoint
 
-        return $definition;
+        $definedSizeCols = $sizes[self::BREAKPOINTS[0]] ?? [];
+
+        $minSize = \min(\count($definedSizeCols), \count($smallestSizeCols));
+        $fallback = \array_values(\array_slice($smallestSizeCols, 0, $minSize));
+        $values = \array_values(\array_slice($definedSizeCols, 0, $minSize));
+
+        for ($i = 0; $i < $minSize; $i++)
+        {
+            $f = $fallback[$i];
+            $v = $values[$i];
+
+            if (null === $v->getSpan())   $v->setSpan($f->getSpan());
+            if (null === $v->getOffset()) $v->setOffset($f->getOffset());
+            if (null === $v->getOrder())  $v->setOrder($f->getOrder());
+        }
+
+        if (\count($smallestSizeCols) > $minSize)
+        {
+            $sizes[self::BREAKPOINTS[0]] = \array_merge($values, \array_slice($smallestSizeCols, $minSize));
+        }
     }
 
     protected function filterClassNames(array $classNames, array &$customClasses = []): array
     {
-        $callback = static function ($class) use (&$customClasses) {
-            if (empty($class)) {
+        $callback = static function ($strClass) use (&$customClasses) {
+            if (empty($strClass)) {
                 return null;
             }
 
             $matches = [];
 
-            if (!\preg_match_all("/(?P<type>col|col-offset|offset|order)(?:-(?P<breakpoint>xxs|xs|sm|md|lg|xl|xxl))?(?:-(?P<width>\d+))?/i", $class, $matches))
+            if (!\preg_match_all("/(?P<type>col|col-offset|offset|order)(?:-(?P<breakpoint>xxs|xs|sm|md|lg|xl|xxl))?(?:-(?P<width>\d+))?/i", $strClass, $matches))
             {
-                $customClasses[] = $class;
+                $customClasses[] = $strClass;
                 return null;
             }
 
@@ -261,7 +284,7 @@ class MigrateSubcolumnsCommand extends Command
                 public string $width;
             };
 
-            $class->class = $class;
+            $class->class = $strClass;
             $class->breakpoint = $matches['breakpoint'][0] ?? '';
             $type = $matches['type'][0] ?? self::CLASS_TYPE_COL;
             $class->type = \strpos($type, 'offset') !== false
@@ -292,12 +315,13 @@ class MigrateSubcolumnsCommand extends Command
     {
         $config = new MigrationConfig();
 
-        $config->setFrom($from = $this->createConfigGetFrom($input));
+        $from = $this->createConfigGetFrom($input);
+        $config->setFrom($from);
 
         switch ($from)
         {
             case MigrationConfig::FROM_SUBCOLUMNS_MODULE:
-                $config->addFetch(MigrationConfig::FETCH_CONFIG);
+                $config->addFetch(MigrationConfig::FETCH_GLOBALS);
                 break;
 
             case MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE:
@@ -307,7 +331,7 @@ class MigrateSubcolumnsCommand extends Command
                 $config->addFetch(MigrationConfig::FETCH_DB);
 
                 if (\class_exists(ModuleSubcolumns::class)) {
-                    $config->addFetch(MigrationConfig::FETCH_CONFIG);
+                    $config->addFetch(MigrationConfig::FETCH_GLOBALS);
                     break;
                 }
 
@@ -318,7 +342,7 @@ class MigrateSubcolumnsCommand extends Command
 
                 $res = $stmt->executeQuery();
                 if ($res->rowCount() > 0) {
-                    $config->addFetch(MigrationConfig::FETCH_CONFIG);
+                    $config->addFetch(MigrationConfig::FETCH_GLOBALS);
                 }
 
                 break;
@@ -352,13 +376,13 @@ class MigrateSubcolumnsCommand extends Command
             return $fromOption;
         }
 
-        // if (class_exists( SubColumnsBootstrapBundle::class)) {
-        //     return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
-        // }
-        //
-        // if (class_exists(ModuleSubcolumns::class)) {
-        //     return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
-        // }
+        if (class_exists( SubColumnsBootstrapBundle::class)) {
+            return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
+        }
+
+        if (class_exists(ModuleSubcolumns::class)) {
+            return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
+        }
 
         $table = $this->connection
             ->prepare('SHOW TABLES LIKE "tl_columnset"')

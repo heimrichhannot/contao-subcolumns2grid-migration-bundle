@@ -5,10 +5,10 @@ namespace HeimrichHannot\Subcolumns2Grid\Config;
 class MigrationConfig
 {
     public const FETCH_DB = 2 ** 9 + 1;  // 513
-    public const FETCH_CONFIG = 2 ** 9 + 2;  // 514
+    public const FETCH_GLOBALS = 2 ** 9 + 2;  // 514
     protected const FETCH = [
         self::FETCH_DB,
-        self::FETCH_CONFIG,
+        self::FETCH_GLOBALS,
     ];
 
     public const FROM_SUBCOLUMNS_MODULE = 2 ** 8 + 1;  // 257
