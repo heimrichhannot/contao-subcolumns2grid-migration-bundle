@@ -4,11 +4,11 @@ namespace HeimrichHannot\Subcolumns2Grid\Config;
 
 class MigrationConfig
 {
-    public const FETCH_DB = 2 ** 9 + 1;  // 513
-    public const FETCH_GLOBALS = 2 ** 9 + 2;  // 514
-    protected const FETCH = [
-        self::FETCH_DB,
-        self::FETCH_GLOBALS,
+    public const SOURCE_DB = 2 ** 9 + 1;  // 513
+    public const SOURCE_GLOBALS = 2 ** 9 + 2;  // 514
+    protected const SOURCE = [
+        self::SOURCE_DB,
+        self::SOURCE_GLOBALS,
     ];
 
     public const FROM_SUBCOLUMNS_MODULE = 2 ** 8 + 1;  // 257
@@ -20,7 +20,7 @@ class MigrationConfig
 
     protected array $definitions = [];
     /** @var int[] */
-    protected array $fetch = [];
+    protected array $sources = [];
     protected ?int $from = null;
 
     public function getDefinitions(): array
@@ -62,35 +62,35 @@ class MigrationConfig
         return $this;
     }
 
-    public function getFetch(): array
+    public function getSources(): array
     {
-        return $this->fetch;
+        return $this->sources;
     }
 
-    public function addFetch(int $fetch): self
+    public function addSource(int $source): self
     {
-        if (empty($this->fetch[$fetch]))
+        if (empty($this->sources[$source]))
         {
-            $this->checkArgument($fetch, self::FETCH, 'fetch');
-            $this->fetch[$fetch] = $fetch;
+            $this->checkArgument($source, self::SOURCE, 'fetch');
+            $this->sources[$source] = $source;
         }
         return $this;
     }
 
-    public function removeFetch(int $fetch): self
+    public function removeSource(int $source): self
     {
-        unset($this->fetch[$fetch]);
+        unset($this->sources[$source]);
         return $this;
     }
 
-    public function hasFetch(int $fetch): bool
+    public function hasSource(int $source): bool
     {
-        return !empty($this->fetch[$fetch]);
+        return !empty($this->sources[$source]);
     }
 
-    public function hasAnyFetch(): bool
+    public function hasAnySource(): bool
     {
-        return !empty($this->fetch);
+        return !empty($this->sources);
     }
 
     public function getFrom(): int

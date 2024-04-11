@@ -2,15 +2,18 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Command;
 
+use Contao\CoreBundle\ContaoCoreBundle;
 use Contao\CoreBundle\Framework\ContaoFramework;
+use Contao\LayoutModel;
+use Contao\StringUtil;
+use Contao\ThemeModel;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Exception;
+use Doctrine\DBAL\Exception as DBALException;
 use FelixPfeiffer\Subcolumns\ModuleSubcolumns;
 use HeimrichHannot\Subcolumns2Grid\Config\ColSetDefinition;
-use HeimrichHannot\Subcolumns2Grid\Config\ColSizeDefinition;
+use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\SubColumnsBootstrapBundle\SubColumnsBootstrapBundle;
-use InvalidArgumentException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -32,6 +35,11 @@ class MigrateSubcolumnsCommand extends Command
 
     protected Connection $connection;
     protected ContaoFramework $framework;
+    protected array $mapMigratedGlobalSetsToId = [];
+    protected array $mapMigratedDBSetsToId = [];
+    protected int $parentLayoutId;
+    protected bool $skipConfirmations = false;
+    protected int $gridVersion;
 
     public function __construct(Connection $connection, ContaoFramework $framework, ?string $name = null)
     {
@@ -45,75 +53,254 @@ class MigrateSubcolumnsCommand extends Command
         $this->setName('sub2grid:migrate')
             ->setDescription('Migrates existing subcolumns to grid columns.')
             ->addOption(
-                'from-subcolumns-bootstrap-bundle',
-                'b',
-                InputOption::VALUE_OPTIONAL,
-                'Attempt to migrate from the SubColumnsBootstrapBundle, no matter if it\'s installed.',
-                false
-            )->addOption(
-                'from-subcolumns-module',
-                'm',
-                InputOption::VALUE_OPTIONAL,
-                'Attempt to migrate from the SubColumns module, no matter if it\'s installed.',
-                false
+                'from',
+                'f',
+                InputOption::VALUE_REQUIRED,
+                'The source to migrate from. Can be "m" for the SubColumns module or "b" for the SubColumnsBootstrapBundle.'
             )
-        ;
+            ->addOption(
+                'skip-confirmations',
+                'y',
+                InputOption::VALUE_NONE,
+                'Skip all confirmations and proceed with the migration.'
+            )
+            ->addOption(
+                'parent-theme',
+                't',
+                InputOption::VALUE_OPTIONAL,
+                'The parent theme id to assign the new grid columns to. Can be 0 to create a new layout.'
+            )
+            ->addOption(
+                'grid-version',
+                'g',
+                InputOption::VALUE_OPTIONAL,
+                'The version of contao-bootstrap/grid to migrate to. Can be 2 or 3.'
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
+        $this->skipConfirmations = $input->getOption('skip-confirmations') ?? false;
+
         $this->framework->initialize();
 
         $io = new SymfonyStyle($input, $output);
-
         $io->title('Migrating subcolumns to grid columns');
 
+        $io->note('This command will migrate existing subcolumns to grid columns. Please make sure to backup your database before running this command.');
+        if (!$this->skipConfirmations && !$io->confirm('Continue with the migration?')) {
+            return Command::SUCCESS;
+        }
+
         try {
-            $config = $this->createConfig($input);
-        } catch (InvalidArgumentException $e) {
-            $io->error($e->getMessage());
-            return Command::FAILURE;
-        }
+            $io->comment('Fetching migration sources and preparing migration.');
+            $config = $this->autoConfig($input);
 
-        if ($from = $config->getFrom()) {
-            $io->info(
-                sprintf('Migrating from %s',
-                $from === MigrationConfig::FROM_SUBCOLUMNS_MODULE
-                    ? 'SubColumns module'
-                    : 'SubColumnsBootstrapBundle')
-            );
-        }
+            if ($from = $config->getFrom()) {
+                $io->info(
+                    sprintf('You are migrating from %s.',
+                        $from === MigrationConfig::FROM_SUBCOLUMNS_MODULE
+                            ? 'the legacy SubColumns module'
+                            : 'SubColumnsBootstrapBundle')
+                );
+            }
 
-        if (!$config->hasAnyFetch()) {
-            $io->error('No migration source found.');
-            return Command::FAILURE;
-        }
-
-        if ($config->hasFetch(MigrationConfig::FETCH_GLOBALS))
-        {
-            $io->comment('Fetching definitions from globals.');
-            try {
-                $configFetch = $this->fetchConfigSubcolumns();
-            } catch (\OutOfBoundsException $e) {
-                $io->error($e->getMessage());
+            if (!$config->hasAnySource()) {
+                $io->error('No migration source found.');
                 return Command::FAILURE;
             }
-        }
 
-        if ($config->hasFetch(MigrationConfig::FETCH_DB))
-        {
-            $io->success('Fetching definitions from database.');
-            try {
+            $this->initGridVersion($input, $io);
+            $this->initParentLayoutId($input, $io);
 
-            } catch (\Throwable $e) {
-                $io->comment('Please make sure that the SubColumnsBootstrapBundle is installed and migrated to the latest version.');
+            if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
+            {
+                $io->comment('Fetching definitions from globals.');
+                $globalSubcolumns = $this->fetchGlobalSetDefinitions();
+
+                $io->comment('Migrating global subcolumn definitions.');
+                $this->migrateGlobalSubcolumns($globalSubcolumns);
+
+                $io->success('Migrated global subcolumn definitions successfully.');
             }
+
+            if ($config->hasSource(MigrationConfig::SOURCE_DB))
+            {
+                $io->success('Fetching definitions from database.');
+                try {
+                    $dbSubcolumns = $this->fetchDBSetDefinitions();
+                } catch (\Throwable $e) {
+                    $io->comment('Please make sure that the SubColumnsBootstrapBundle is installed and migrated to the latest version.');
+                }
+            }
+        }
+        catch (\Exception|DBALException $e)
+        {
+            $io->error($e->getMessage());
+            return Command::FAILURE;
         }
 
         return Command::SUCCESS;
     }
 
-    protected function fetchConfigSubcolumns(): ?array
+    /**
+     * @throws \Exception
+     */
+    protected function initParentLayoutId(InputInterface $input, SymfonyStyle $io): void
+    {
+        $parentLayoutId = $input->getOption('parent-theme');  // caution: can be "0"
+        if ($parentLayoutId !== null && \is_numeric($parentLayoutId = \ltrim($parentLayoutId, ' :='))) {
+            $this->parentLayoutId = (int) $parentLayoutId;
+        }
+
+        if (!isset($this->parentLayoutId)) {
+            $this->parentLayoutId = $this->askForParentTheme($io);
+        }
+
+        if ($this->parentLayoutId === 0) {
+            $this->parentLayoutId = $this->createNewTheme();
+        }
+
+        if (!$this->parentLayoutId || $this->parentLayoutId < 1) {
+            throw new \Exception('No parent theme defined.');
+        }
+    }
+
+    protected function createNewTheme(): int
+    {
+        $layout = new ThemeModel();
+        $layout->setRow([
+            'tstamp' => time(),
+            'name' => 'Grids migrated from SubColumns',
+            'author' => 'Subcolumns2Grid',
+            'vars' => \serialize([])
+        ]);
+        $layout->save();
+        return $layout->id;
+    }
+
+    /**
+     * @throws \Exception
+     */
+    protected function initGridVersion(InputInterface $input, SymfonyStyle $io)
+    {
+        $gridVersion = $input->getOption('grid-version');
+        if ($gridVersion !== null && \in_array($gridVersion = (int) \ltrim($gridVersion, ' :='), [2, 3])) {
+            $this->gridVersion = $gridVersion;
+            $io->info("Migrating to contao-bootstrap/grid version $gridVersion.");
+            return;
+        }
+
+        if (!isset($this->gridVersion)) {
+            $version = ContaoCoreBundle::getVersion();
+            $isContao5 = \version_compare($version, '5', '>=');
+            if ($isContao5) {
+                $io->info("Detected Contao version $version. Migrating to contao-bootstrap/grid version 3.");
+                $this->gridVersion = 3;
+            } else {
+                $io->comment("Detected Contao version $version.");
+                $this->gridVersion = $this->askForGridVersion($io);
+            }
+        }
+
+        if (empty($this->gridVersion)) {
+            throw new \Exception('No grid version defined.');
+        }
+    }
+
+    protected function askForGridVersion(SymfonyStyle $io): int
+    {
+        $options = [
+            2 => 'contao-bootstrap/grid: ^2',
+            3 => 'contao-bootstrap/grid: ^3',
+        ];
+        $version = $io->choice('Select the version of contao-bootstrap/grid to migrate to', $options);
+        return (int) \array_search($version, $options);
+    }
+
+    protected function askForParentTheme(SymfonyStyle $io): int
+    {
+        $layouts = ThemeModel::findAll();
+        $layoutOptions = [
+            'new' => 'Create a new theme',
+        ];
+        foreach ($layouts as $layout) {
+            $layoutOptions[$layout->id] = "$layout->name";
+        }
+        $id = $io->choice('Select the parent theme to assign the new grid columns to', $layoutOptions);
+        return (int) $id;  // (int) "new" === 0
+    }
+
+    /**
+     * @param array<ColSetDefinition> $globalSubcolumns
+     * @return void
+     * @throws DBALException
+     */
+    protected function migrateGlobalSubcolumns(array $globalSubcolumns): void
+    {
+        foreach ($globalSubcolumns as $colset)
+        {
+            $id = $this->migrateGlobalSubcolumn($colset);
+            $this->mapMigratedGlobalSetsToId[$colset->getIdentifier()] = $id;
+        }
+    }
+
+    /**
+     * @throws DBALException
+     */
+    protected function migrateGlobalSubcolumn(ColSetDefinition $colset): int
+    {
+        $breakpointOrder = \array_flip(self::BREAKPOINTS);
+
+        $sizes = \array_filter($colset->getSizes(), static function ($size) {
+            return \in_array($size, self::BREAKPOINTS);
+        });
+
+        \uasort($sizes, static function ($a, $b) use ($breakpointOrder) {
+            return $breakpointOrder[$a] <=> $breakpointOrder[$b];
+        });
+
+        $arrColset = $colset->asArray($this->gridVersion === 3 ? 1 : 0);
+        $serializeCol = function ($breakpoint) use ($arrColset) {
+            if (isset($arrColset[$breakpoint])) {
+                return \serialize($arrColset[$breakpoint]);
+            }
+            return '';
+        };
+
+        $stmt = $this->connection->prepare(<<<'SQL'
+            INSERT INTO tl_bs_grid
+                ( pid,  tstamp,  title,  description,  sizes,  rowClass,  xsSize,  smSize,  mdSize,  lgSize,  xlSize,  xxlSize)
+            VALUES
+                (:pid, :tstamp, :title, :description, :sizes, :rowClass, :xsSize, :smSize, :mdSize, :lgSize, :xlSize, :xxlSize); 
+        SQL);
+
+        $stmt->bindValue('pid', $this->parentLayoutId);
+        $stmt->bindValue('tstamp', time());
+        $stmt->bindValue('title', $colset->getTitle());
+        $stmt->bindValue('description', \sprintf('[sub2col:%s]', $colset->getIdentifier()));
+        $stmt->bindValue('sizes', \serialize($sizes));
+        $stmt->bindValue('rowClass', '');
+        $stmt->bindValue('xsSize', $serializeCol('xs'));
+        $stmt->bindValue('smSize', $serializeCol('sm'));
+        $stmt->bindValue('mdSize', $serializeCol('md'));
+        $stmt->bindValue('lgSize', $serializeCol('lg'));
+        $stmt->bindValue('xlSize', $serializeCol('xl'));
+        $stmt->bindValue('xxlSize', $serializeCol('xxl'));
+        $stmt->executeStatement();
+
+        return $this->connection->lastInsertId();
+    }
+
+    protected function fetchDBSetDefinitions(): ?array
+    {
+        # todo: maybe we don't have to fetch the sources but can directly execute database operations?
+    }
+
+    /**
+     * @return array<ColSetDefinition>
+     */
+    protected function fetchGlobalSetDefinitions(): array
     {
         if (empty($GLOBALS['TL_SUBCL']) || !is_array($GLOBALS['TL_SUBCL'])) {
             throw new \OutOfBoundsException('No subcolumns found in $GLOBALS["TL_SUBCL"].');
@@ -139,12 +326,17 @@ class MigrateSubcolumnsCommand extends Command
 
             foreach ($profile['sets'] as $setName => $globalColsConfig)
             {
-                $sizes = $this->parseGlobalSets($globalColsConfig);
+                $sizes = $this->getSetDefinitionsFromArray($globalColsConfig);
+
+                $idSource = $profileName === 'bootstrap' ? 'bootstrap3' : $profileName;
+                $identifier = \sprintf('globals.%s.%s', $idSource, $setName);
 
                 $colset = ColSetDefinition::create()
+                    ->setIdentifier($identifier)
+                    ->setTitle("$label: $setName [global]")
                     ->setPublished(true)
-                    ->setColumnSizes($sizes)
-                    ->setName($setName); ## todo: give improved name
+                    ->setSizeDefinitions($sizes)
+                ;
 
                 $colsetDefinitions[] = $colset;
             }
@@ -155,11 +347,11 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @param array $colsConfig
-     * @return array<string, array<ColSizeDefinition>>
+     * @return array<string, array<int, ColumnDefinition>>
      */
-    protected function parseGlobalSets(array $colsConfig): array
+    protected function getSetDefinitionsFromArray(array $colsConfig): array
     {
-        /** @var array<string, array<ColSizeDefinition>> $sizes */
+        /** @var array<string, array<int, ColumnDefinition>> $sizes */
         $sizes = [];
 
         $colIndex = 0;
@@ -182,7 +374,7 @@ class MigrateSubcolumnsCommand extends Command
                     $sizes[$breakpoint] = [];
                 }
 
-                $sizes[$breakpoint][$colIndex] ??= ColSizeDefinition::create()
+                $sizes[$breakpoint][$colIndex] ??= ColumnDefinition::create()
                     ->setCustomClasses(\implode(' ', $customClasses));
 
                 $col = $sizes[$breakpoint][$colIndex];
@@ -266,9 +458,9 @@ class MigrateSubcolumnsCommand extends Command
                 continue;
             }
 
-            if ($specificCol->getSpan()) $unspecificCol->setSpan($specificCol->getSpan() ?? null);
-            if ($specificCol->getOffset()) $unspecificCol->setOffset($specificCol->getOffset() ?? null);
-            if ($specificCol->getOrder()) $unspecificCol->setOrder($specificCol->getOrder() ?? null);
+            if ($span = $specificCol->getSpan())     $unspecificCol->setSpan($span);
+            if ($offset = $specificCol->getOffset()) $unspecificCol->setOffset($offset);
+            if ($order = $specificCol->getOrder())   $unspecificCol->setOrder($order);
         }
     }
 
@@ -321,41 +513,41 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws Exception
+     * @throws DBALException
      */
-    protected function createConfig(InputInterface $input): MigrationConfig
+    protected function autoConfig(InputInterface $input): MigrationConfig
     {
         $config = new MigrationConfig();
 
-        $from = $this->createConfigGetFrom($input);
+        $from = $this->autoFrom($input);
         $config->setFrom($from);
 
         switch ($from)
         {
             case MigrationConfig::FROM_SUBCOLUMNS_MODULE:
-                $config->addFetch(MigrationConfig::FETCH_GLOBALS);
+                $config->addSource(MigrationConfig::SOURCE_GLOBALS);
                 break;
 
             case MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE:
 
-                throw new InvalidArgumentException('Migrating from the SubColumnsBootstrapBundle is not supported yet.');
+                throw new \InvalidArgumentException('Migrating from the SubColumnsBootstrapBundle is not supported yet.');
 
-                $config->addFetch(MigrationConfig::FETCH_DB);
-
-                if (\class_exists(ModuleSubcolumns::class)) {
-                    $config->addFetch(MigrationConfig::FETCH_GLOBALS);
-                    break;
-                }
-
-                $stmt = $this->connection->prepare(<<<'SQL'
-                    SELECT id FROM tl_content WHERE type IN :types AND sc_columnset LIKE "globals.%" LIMIT 1
-                SQL);
-                $stmt->bindValue('types', static::CE_TYPES);
-
-                $res = $stmt->executeQuery();
-                if ($res->rowCount() > 0) {
-                    $config->addFetch(MigrationConfig::FETCH_GLOBALS);
-                }
+                // $config->addFetch(MigrationConfig::FETCH_DB);
+                //
+                // if (\class_exists(ModuleSubcolumns::class)) {
+                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
+                //     break;
+                // }
+                //
+                // $stmt = $this->connection->prepare(<<<'SQL'
+                //     SELECT id FROM tl_content WHERE type IN :types AND sc_columnset LIKE "globals.%" LIMIT 1
+                // SQL);
+                // $stmt->bindValue('types', static::CE_TYPES);
+                //
+                // $res = $stmt->executeQuery();
+                // if ($res->rowCount() > 0) {
+                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
+                // }
 
                 break;
         }
@@ -364,28 +556,17 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws Exception
+     * @throws DBALException
      */
-    protected function createConfigGetFrom(InputInterface $input): int
+    protected function autoFrom(InputInterface $input): int
     {
-        $fromOption = (function () use ($input) {
-            $from =
-                (int)$input->getOption('from-subcolumns-module') |
-                (int)$input->getOption('from-subcolumns-bootstrap-bundle') * 2;
+        $from = ($from = $input->getOption('from')) ? \ltrim($from, ' :=') : null;
 
-            if ($from === 3) {
-                throw new InvalidArgumentException('You can only specify one migration source parameter "from-*".');
-            }
-
-            return [
-                0 => null,
-                1 => MigrationConfig::FROM_SUBCOLUMNS_MODULE,
-                2 => MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE,
-            ][$from];
-        })();
-
-        if ($fromOption !== null) {
-            return $fromOption;
+        switch ($from) {
+            case null: break;
+            case 'm': return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
+            case 'b': return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
+            default: throw new \InvalidArgumentException('Invalid source.');
         }
 
         if (class_exists( SubColumnsBootstrapBundle::class)) {

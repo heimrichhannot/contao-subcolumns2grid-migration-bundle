@@ -2,26 +2,41 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Config;
 
+use Exception;
+
 class ColSetDefinition implements \Countable
 {
     protected int $count;
-    protected string $name;
+    protected string $identifier;
+    protected string $title;
     protected bool $useOutside;
     protected string $outsideClass;
     protected bool $useInside;
     protected string $insideClass = 'inside';
     protected bool $published;
     protected string $cssID;
-    protected array $columnSizes = [];
+    /** @var array<string, array<int, ColumnDefinition>> */
+    protected array $sizeDefinitions = [];
 
-    public function getName(): string
+    public function getIdentifier(): string
     {
-        return $this->name;
+        return $this->identifier;
     }
 
-    public function setName(string $name): self
+    public function setIdentifier(string $identifier): self
     {
-        $this->name = $name;
+        $this->identifier = $identifier;
+        return $this;
+    }
+
+    public function getTitle(): string
+    {
+        return $this->title;
+    }
+
+    public function setTitle(string $title): self
+    {
+        $this->title = $title;
         return $this;
     }
 
@@ -82,29 +97,67 @@ class ColSetDefinition implements \Countable
 
     public function getSizes(): array
     {
-        return array_keys($this->columnSizes);
+        return array_keys($this->sizeDefinitions);
     }
 
-    public function addSize(string $breakpoint, ColSizeDefinition $size): self
+    public function addSize(string $breakpoint, ColumnDefinition $size): self
     {
-        $this->columnSizes[$breakpoint] = $size;
+        $this->sizeDefinitions[$breakpoint] = $size;
         return $this;
     }
 
-    public function getColumnSizes(): array
+    public function getSizeDefinitions(): array
     {
-        return $this->columnSizes;
+        return $this->sizeDefinitions;
     }
 
-    public function setColumnSizes(array $sizes): self
+    /**
+     * @param array<string, array<int, ColumnDefinition>> $sizeDefinitions
+     * @return $this
+     */
+    public function setSizeDefinitions(array $sizeDefinitions): self
     {
-        $this->columnSizes = $sizes;
+        foreach ($sizeDefinitions as $sizeWrapper) {
+            if (!\is_array($sizeWrapper)) {
+                throw new \InvalidArgumentException('Invalid size definition.');
+            }
+            foreach ($sizeWrapper as $colNumber => $size) {
+                if (!\is_integer($colNumber) || !$size instanceof ColumnDefinition) {
+                    throw new \InvalidArgumentException('Invalid size definition.');
+                }
+            }
+        }
+        $this->sizeDefinitions = $sizeDefinitions;
         return $this;
     }
 
     public function count(): int
     {
         return $this->count;
+    }
+
+    public function asArray(int $incrementIndices = 0): array
+    {
+        $sizes = [];
+        foreach ($this->sizeDefinitions as $breakpoint => $sizeWrapper)
+        {
+            if (!isset($sizes[$breakpoint])) {
+                $sizes[$breakpoint] = [];
+            }
+
+            \ksort($sizeWrapper, \SORT_NUMERIC);
+            $firstKey = \array_key_first($sizeWrapper);
+            if ($firstKey > 0) {
+                foreach (range($incrementIndices,  $firstKey + $incrementIndices - 1) as $index) {
+                    $sizes[$breakpoint][$index] = ColumnDefinition::create()->asArray();
+                }
+            }
+
+            foreach ($sizeWrapper as $index => $size) {
+                $sizes[$breakpoint][$index + $incrementIndices] = $size->asArray();
+            }
+        }
+        return $sizes;
     }
 
     public static function create(): self
