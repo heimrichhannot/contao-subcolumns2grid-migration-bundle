@@ -10,6 +10,7 @@ use Contao\ThemeModel;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DBALException;
 use FelixPfeiffer\Subcolumns\ModuleSubcolumns;
+use HeimrichHannot\Subcolumns2Grid\Config\ClassName;
 use HeimrichHannot\Subcolumns2Grid\Config\ColSetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
@@ -27,9 +28,11 @@ class MigrateSubcolumnsCommand extends Command
         'colsetPart',
         'colsetEnd',
     ];
-    protected const CLASS_TYPE_COL = 'col';
-    protected const CLASS_TYPE_OFFSET = 'offset';
-    protected const CLASS_TYPE_ORDER = 'order';
+    protected const CE_RENAME = [
+        'colsetStart' => 'bs_gridStart',
+        'colsetPart'  => 'bs_gridSeparator',
+        'colsetEnd'   => 'bs_gridStop',
+    ];
     protected const BREAKPOINTS = ['xs', 'sm', 'md', 'lg', 'xl', 'xxl'];
     protected const UNSPECIFIC_PLACEHOLDER = '#{._.}#';
 
@@ -67,14 +70,14 @@ class MigrateSubcolumnsCommand extends Command
             ->addOption(
                 'parent-theme',
                 't',
-                InputOption::VALUE_OPTIONAL,
-                'The parent theme id to assign the new grid columns to. Can be 0 to create a new layout.'
+                InputOption::VALUE_REQUIRED,
+                'The parent theme id to assign the new grid columns to. May be 0 to create a new layout.'
             )
             ->addOption(
                 'grid-version',
                 'g',
-                InputOption::VALUE_OPTIONAL,
-                'The version of contao-bootstrap/grid to migrate to. Can be 2 or 3.'
+                InputOption::VALUE_REQUIRED,
+                'The version of contao-bootstrap/grid to migrate to. Must be 2 or 3.'
             );
     }
 
@@ -122,6 +125,8 @@ class MigrateSubcolumnsCommand extends Command
                 $this->migrateGlobalSubcolumns($globalSubcolumns);
 
                 $io->success('Migrated global subcolumn definitions successfully.');
+
+                $this->transformGlobalColumnsetReferences();
             }
 
             if ($config->hasSource(MigrationConfig::SOURCE_DB))
@@ -141,6 +146,19 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * @throws DBALException
+     */
+    protected function transformGlobalColumnsetReferences(): void
+    {
+        $stmt = $this->connection->prepare(<<<'SQL'
+            SELECT id, type, sc_columnset FROM tl_content WHERE type LIKE "col%" AND sc_columnset LIKE "globals.%"
+        SQL);
+        $contentElements = $stmt->executeQuery();
+
+        return;
     }
 
     /**
@@ -203,6 +221,10 @@ class MigrateSubcolumnsCommand extends Command
             }
         }
 
+        if ($this->gridVersion === 3 && \version_compare(\phpversion(), '8.1', '<')) {
+            throw new \Exception('Grid version 3 is incompatible with php version < 8.1');
+        }
+
         if (empty($this->gridVersion)) {
             throw new \Exception('No grid version defined.');
         }
@@ -225,7 +247,7 @@ class MigrateSubcolumnsCommand extends Command
             'new' => 'Create a new theme',
         ];
         foreach ($layouts as $layout) {
-            $layoutOptions[$layout->id] = "$layout->name";
+            $layoutOptions[$layout->id] = $layout->name;
         }
         $id = $io->choice('Select the parent theme to assign the new grid columns to', $layoutOptions);
         return (int) $id;  // (int) "new" === 0
@@ -238,11 +260,27 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function migrateGlobalSubcolumns(array $globalSubcolumns): void
     {
+        $stmt = $this->connection
+            ->prepare('SELECT description FROM tl_bs_grid WHERE pid = ? AND description LIKE "[sub2col:%"');
+        $stmt->bindValue(1, $this->parentLayoutId);
+        $migratedResult = $stmt->executeQuery();
+
+        $migrated = [];
+        while ($row = $migratedResult->fetchAssociative()) {
+            $migrated[] = \substr($row['description'], 9, -1);
+        }
+
+        $this->connection->beginTransaction();
         foreach ($globalSubcolumns as $colset)
         {
+            if (\in_array($colset->getIdentifier(), $migrated, true)) {
+                continue;
+            }
             $id = $this->migrateGlobalSubcolumn($colset);
+            $colset->setMigratedId($id);
             $this->mapMigratedGlobalSetsToId[$colset->getIdentifier()] = $id;
         }
+        $this->connection->commit();
     }
 
     /**
@@ -381,13 +419,13 @@ class MigrateSubcolumnsCommand extends Command
 
                 switch ($objColClass->type)
                 {
-                    case self::CLASS_TYPE_COL:
+                    case ClassName::CLASS_TYPE_COL:
                         $col->setSpan($objColClass->width);
                         break;
-                    case self::CLASS_TYPE_OFFSET:
+                    case ClassName::CLASS_TYPE_OFFSET:
                         $col->setOffset($objColClass->width);
                         break;
-                    case self::CLASS_TYPE_ORDER:
+                    case ClassName::CLASS_TYPE_ORDER:
                         $col->setOrder($objColClass->width);
                         break;
                 }
@@ -466,43 +504,11 @@ class MigrateSubcolumnsCommand extends Command
 
     protected function filterClassNames(array $classNames, array &$customClasses = []): array
     {
-        $callback = static function ($strClass) use (&$customClasses) {
-            if (empty($strClass)) {
-                return null;
-            }
-
-            $matches = [];
-
-            $rx = "/(?P<type>(?:col-)?offset|col|order)(?:-(?P<breakpoint>xxs|xs|sm|md|lg|xl|xxl))?(?:-(?P<width>\d+))?/i";
-            if (!\preg_match_all($rx, $strClass, $matches))
-            {
-                $customClasses[] = $strClass;
-                return null;
-            }
-
-            $class = new class() {
-                public string $class;
-                public string $type;
-                public string $breakpoint;
-                public string $width;
-            };
-
-            $class->class = $strClass;
-            $class->breakpoint = $matches['breakpoint'][0] ?? '';
-            $class->width = $matches['width'][0] ?? '';
-
-            $type = $matches['type'][0] ?? self::CLASS_TYPE_COL;
-            $class->type = \strpos($type, 'offset') !== false
-                ? self::CLASS_TYPE_OFFSET : (
-                \strpos($type, 'order') !== false
-                    ? self::CLASS_TYPE_ORDER
-                    : self::CLASS_TYPE_COL
-                );
-
-            return $class;
-        };
-
-        return \array_filter(\array_map($callback, $classNames));
+        return \array_filter(
+            \array_map(static function ($strClass) use (&$customClasses) {
+                return ClassName::create($strClass, $customClasses);
+            }, $classNames)
+        );
     }
 
     protected function fetchDatabaseSubcolumns(): void

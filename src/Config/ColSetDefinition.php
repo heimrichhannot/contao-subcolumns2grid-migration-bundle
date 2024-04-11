@@ -18,6 +18,8 @@ class ColSetDefinition implements \Countable
     /** @var array<string, array<int, ColumnDefinition>> */
     protected array $sizeDefinitions = [];
 
+    protected ?int $migratedId = null;
+
     public function getIdentifier(): string
     {
         return $this->identifier;
@@ -128,6 +130,17 @@ class ColSetDefinition implements \Countable
             }
         }
         $this->sizeDefinitions = $sizeDefinitions;
+        return $this;
+    }
+
+    public function getMigratedId(): ?int
+    {
+        return $this->migratedId;
+    }
+
+    public function setMigratedId(?int $migratedId): self
+    {
+        $this->migratedId = $migratedId;
         return $this;
     }
 
