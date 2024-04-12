@@ -26,7 +26,7 @@ composer require heimrichhannot/contao-subcolumns2grid-migration-bundle:dev-trun
 - If you were using the [subcolumns bootstrap bundle](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle) prior to the migration,
 **you must update and migrate to version [1.13@beta](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle/tree/feature/set_selection)** before running this migration.
 
-> **Note:** Neither the subcolumns module or subcolumns bootstrap bundle have to be installed,
+> **Note:** Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
 > although it does not hurt if they are.
 
 ## Usage
