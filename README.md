@@ -38,7 +38,7 @@ Run the migration via the CLI wizard:
 vendor/bin/contao-console sub2grid:migrate
 ```
 
-Or use the provided options to skip the wizard:
+Or use the provided options to skip the wizard. List all available options via:
 
 ```bash
 vendor/bin/contao-console sub2grid:migrate --help
