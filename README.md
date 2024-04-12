@@ -43,3 +43,17 @@ Or use the provided options to skip the wizard. List all available options via:
 ```bash
 vendor/bin/contao-console sub2grid:migrate --help
 ```
+
+## Aftermath
+
+After the migration, you should check the affected pages and modules for any issues.
+
+- The migration will migrate global subcolumn profile definitions from your `config.php`
+  to grid definitions of any template you choose or of a new template.
+- The migration will migrate database-defined subcolumn definitions to grid definitions of any template you choose or
+  of a new template.
+- The migration will transform subcolumn content elements to grid content elements.
+- The migration will not remove the subcolumns module or subcolumns bootstrap bundle.
+
+> **Note:** You may run the migration multiple times without any issues. It will not duplicate any grid definitions,
+> as long as you leave the created tags (e.g. `[sub2grid:myset.id]`) within the grid definition descriptions untouched. 
