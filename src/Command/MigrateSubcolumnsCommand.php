@@ -2,31 +2,40 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Command;
 
+use Contao\Config;
 use Contao\CoreBundle\ContaoCoreBundle;
 use Contao\CoreBundle\Framework\ContaoFramework;
 use Contao\LayoutModel;
 use Contao\StringUtil;
 use Contao\ThemeModel;
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Driver\PDO\Exception;
 use Doctrine\DBAL\Exception as DBALException;
+use Doctrine\DBAL\ParameterType;
 use FelixPfeiffer\Subcolumns\ModuleSubcolumns;
 use HeimrichHannot\Subcolumns2Grid\Config\ClassName;
 use HeimrichHannot\Subcolumns2Grid\Config\ColSetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
+use HeimrichHannot\Subcolumns2Grid\Config\ContentElementDTO;
 use HeimrichHannot\SubColumnsBootstrapBundle\SubColumnsBootstrapBundle;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Throwable;
 
 class MigrateSubcolumnsCommand extends Command
 {
+    protected const CE_TYPE_COLSET_START = 'colsetStart';
+    protected const CE_TYPE_COLSET_PART = 'colsetPart';
+    protected const CE_TYPE_COLSET_END = 'colsetEnd';
     protected const CE_TYPES = [
-        'colsetStart',
-        'colsetPart',
-        'colsetEnd',
+        self::CE_TYPE_COLSET_START,
+        self::CE_TYPE_COLSET_PART,
+        self::CE_TYPE_COLSET_END,
     ];
     protected const CE_RENAME = [
         'colsetStart' => 'bs_gridStart',
@@ -40,7 +49,7 @@ class MigrateSubcolumnsCommand extends Command
     protected ContaoFramework $framework;
     protected array $mapMigratedGlobalSetsToId = [];
     protected array $mapMigratedDBSetsToId = [];
-    protected int $parentLayoutId;
+    protected int $parentThemeId;
     protected bool $skipConfirmations = false;
     protected int $gridVersion;
 
@@ -114,7 +123,7 @@ class MigrateSubcolumnsCommand extends Command
             }
 
             $this->initGridVersion($input, $io);
-            $this->initParentLayoutId($input, $io);
+            $this->initParentThemeId($input, $io);
 
             if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
             {
@@ -122,11 +131,21 @@ class MigrateSubcolumnsCommand extends Command
                 $globalSubcolumns = $this->fetchGlobalSetDefinitions();
 
                 $io->comment('Migrating global subcolumn definitions.');
-                $this->migrateGlobalSubcolumns($globalSubcolumns);
+                $newlyMigratedSubcolumns = $this->migrateGlobalSubcolumns($globalSubcolumns);
+                if (empty($newlyMigratedSubcolumns)) {
+                    $io->info('No new global subcolumn definitions had to be migrated.');
+                } else {
+                    $io->success('Migrated global subcolumn definitions successfully.');
+                }
 
-                $io->success('Migrated global subcolumn definitions successfully.');
-
-                $this->transformGlobalColumnsetReferences();
+                $io->comment('Checking for module content elements.');
+                if ($this->checkIfModuleContentElementsExist()) {
+                    $io->comment('Migrating module content elements.');
+                    $this->transformModuleContentElements();
+                    $io->success('Migrated module content elements successfully.');
+                } else {
+                    $io->info('No module content elements found.');
+                }
             }
 
             if ($config->hasSource(MigrationConfig::SOURCE_DB))
@@ -139,118 +158,187 @@ class MigrateSubcolumnsCommand extends Command
                 }
             }
         }
-        catch (\Exception|DBALException $e)
+        catch (\Throwable $e)
         {
             $io->error($e->getMessage());
             return Command::FAILURE;
         }
 
+        $io->success('Migration completed successfully.');
+
         return Command::SUCCESS;
+    }
+
+    /**
+     * Check if there are module content elements in the database.
+     *
+     * Module content elements can be differentiated from subcolumn-bootstrap-bundle content elements,
+     *   because the latter have a sc_columnset field that is not empty.
+     *
+     * @throws DBALException
+     */
+    protected function checkIfModuleContentElementsExist(): bool
+    {
+        $stmt = $this->connection->prepare(<<<'SQL'
+            SELECT COUNT(*)
+              FROM information_schema.COLUMNS
+             WHERE TABLE_NAME = 'tl_content'
+               AND COLUMN_NAME = 'sc_columnset'
+        SQL);
+
+        $result = $stmt->executeQuery();
+
+        if (((int) $result->fetchOne()) < 1)
+            // sc_columnset does not exist in tl_content,
+            // therefore we can assume that only module content elements exist
+        {
+            return true;
+        }
+
+        $stmt = $this->connection->prepare(<<<'SQL'
+            SELECT COUNT(id)
+              FROM tl_content
+             WHERE type LIKE "colset%"
+               AND sc_columnset = ""
+               AND sc_type != ""
+        SQL);
+
+        $result = $stmt->executeQuery();
+
+        // if there are colset elements with a sc_type but no sc_columnset,
+        // they have to be module content elements
+        return ((int) $result->fetchOne()) > 0;
+    }
+
+    /**
+     * @throws DBALException
+     * @throws Throwable
+     */
+    protected function transformModuleContentElements(): void
+    {
+        $currentProfile = Config::get('subcolumns');
+
+        if (empty($currentProfile)) {
+            throw new \DomainException('No subcolumns profile found in the configuration.');
+        }
+
+        if (\strpos($currentProfile, 'yaml') !== false) {
+            throw new \DomainException('YAML profiles are not supported. Please check your site configuration.');
+        }
+
+        if ($currentProfile === 'bootstrap') {
+            $currentProfile = 'bootstrap3';
+        }
+
+        $stmt = $this->connection->prepare(<<<'SQL'
+            SELECT id, type, sc_childs, sc_parent, sc_type, sc_name
+              FROM tl_content
+             WHERE type LIKE "colset%"
+               AND sc_columnset = ""
+        SQL);
+        $result = $stmt->executeQuery();
+
+        $contentElements = [];
+
+        while ($row = $result->fetchAssociative())
+        {
+            $ce = ContentElementDTO::fromRow($row);
+            $ce->setIdentifier(\sprintf('globals.%s.%s', $currentProfile, $ce->getScType()));
+            $contentElements[$ce->getScParent()][] = $ce;
+        }
+
+        $this->transformContentElements($contentElements);
+    }
+
+    /**
+     * @throws Throwable
+     * @throws DBALException
+     */
+    protected function transformContentElements(array $contentElements): void
+    {
+        $this->connection->beginTransaction();
+
+        try {
+            foreach ($contentElements as $parentId => $rows)
+            {
+                $this->transformSubcolumnSetIntoGrid($parentId, $rows);
+            }
+        } catch (\Throwable $e) {
+            $this->connection->rollBack();
+            throw $e;
+        }
+
+        $this->connection->commit();
     }
 
     /**
      * @throws DBALException
      */
-    protected function transformGlobalColumnsetReferences(): void
+    protected function transformSubcolumnSetIntoGrid(int $parentId, array $rows): void
     {
+        if (empty($rows) || \count($rows) < 2) {
+            throw new \DomainException('No or not enough content elements found for valid subcolumn set.');
+        }
+
+        $gridId = $this->mapMigratedGlobalSetsToId[$rows[0]->getIdentifier()] ?? null;
+        if (!$gridId) {
+            throw new \DomainException('No migrated global set found for content element.');
+        }
+
+        $start = \array_filter($rows, static function (ContentElementDTO $row) use ($parentId) {
+            return $row->getScType() === self::CE_TYPE_COLSET_START && $row->getId() === $parentId;
+        })[0] ?? null;
+
+        if (!$start) {
+            throw new \DomainException('No start element found for subcolumn set.');
+        }
+
         $stmt = $this->connection->prepare(<<<'SQL'
-            SELECT id, type, sc_columnset FROM tl_content WHERE type LIKE "col%" AND sc_columnset LIKE "globals.%"
+            UPDATE tl_content
+               SET bs_grid_parent = :parentId,
+                   bs_grid_name = :name,
+                   bs_grid = :gridId,
+                   type = :renameType
+             WHERE id = :id
         SQL);
-        $contentElements = $stmt->executeQuery();
 
-        return;
-    }
+        $stmt->bindValue('parentId', 0);
+        $stmt->bindValue('name', $start->getScName());
+        $stmt->bindValue('gridId', $gridId);
+        $stmt->bindValue('renameType', self::CE_RENAME[self::CE_TYPE_COLSET_START]);
+        $stmt->bindValue('id', $start->getId());
 
-    /**
-     * @throws \Exception
-     */
-    protected function initParentLayoutId(InputInterface $input, SymfonyStyle $io): void
-    {
-        $parentLayoutId = $input->getOption('parent-theme');  // caution: can be "0"
-        if ($parentLayoutId !== null && \is_numeric($parentLayoutId = \ltrim($parentLayoutId, ' :='))) {
-            $this->parentLayoutId = (int) $parentLayoutId;
+        $stmt->executeStatement();
+
+        $childIds = \array_filter(\array_map(static function (ContentElementDTO $row) {
+            return $row->getId();
+        }, \array_slice($rows, 1)));
+
+        $placeholders = [];
+        foreach ($childIds as $index => $childId) {
+            $placeholders[] = ':child_' . $index;
+        }
+        $placeholders = \implode(', ', $placeholders);
+
+        $stmt = $this->connection->prepare(<<<SQL
+            UPDATE tl_content
+               SET bs_grid_parent = :parentId,
+                   type = REPLACE(REPLACE(type, :oPart, :rPart), :oStop, :rStop)
+             WHERE id IN ($placeholders)
+               AND type LIKE "colset%"
+        SQL);
+
+        $stmt->bindValue('parentId', $start->getId());
+        $stmt->bindValue('oPart', self::CE_TYPE_COLSET_PART);
+        $stmt->bindValue('rPart', self::CE_RENAME[self::CE_TYPE_COLSET_PART]);
+        $stmt->bindValue('oStop', self::CE_TYPE_COLSET_END);
+        $stmt->bindValue('rStop', self::CE_RENAME[self::CE_TYPE_COLSET_END]);
+
+        foreach ($childIds as $index => $childId) {
+            $stmt->bindValue('child_' . $index, $childId, ParameterType::INTEGER);
         }
 
-        if (!isset($this->parentLayoutId)) {
-            $this->parentLayoutId = $this->askForParentTheme($io);
-        }
-
-        if ($this->parentLayoutId === 0) {
-            $this->parentLayoutId = $this->createNewTheme();
-        }
-
-        if (!$this->parentLayoutId || $this->parentLayoutId < 1) {
-            throw new \Exception('No parent theme defined.');
-        }
-    }
-
-    protected function createNewTheme(): int
-    {
-        $layout = new ThemeModel();
-        $layout->setRow([
-            'tstamp' => time(),
-            'name' => 'Grids migrated from SubColumns',
-            'author' => 'Subcolumns2Grid',
-            'vars' => \serialize([])
-        ]);
-        $layout->save();
-        return $layout->id;
-    }
-
-    /**
-     * @throws \Exception
-     */
-    protected function initGridVersion(InputInterface $input, SymfonyStyle $io)
-    {
-        $gridVersion = $input->getOption('grid-version');
-        if ($gridVersion !== null && \in_array($gridVersion = (int) \ltrim($gridVersion, ' :='), [2, 3])) {
-            $this->gridVersion = $gridVersion;
-            $io->info("Migrating to contao-bootstrap/grid version $gridVersion.");
-            return;
-        }
-
-        if (!isset($this->gridVersion)) {
-            $version = ContaoCoreBundle::getVersion();
-            $isContao5 = \version_compare($version, '5', '>=');
-            if ($isContao5) {
-                $io->info("Detected Contao version $version. Migrating to contao-bootstrap/grid version 3.");
-                $this->gridVersion = 3;
-            } else {
-                $io->comment("Detected Contao version $version.");
-                $this->gridVersion = $this->askForGridVersion($io);
-            }
-        }
-
-        if ($this->gridVersion === 3 && \version_compare(\phpversion(), '8.1', '<')) {
-            throw new \Exception('Grid version 3 is incompatible with php version < 8.1');
-        }
-
-        if (empty($this->gridVersion)) {
-            throw new \Exception('No grid version defined.');
-        }
-    }
-
-    protected function askForGridVersion(SymfonyStyle $io): int
-    {
-        $options = [
-            2 => 'contao-bootstrap/grid: ^2',
-            3 => 'contao-bootstrap/grid: ^3',
-        ];
-        $version = $io->choice('Select the version of contao-bootstrap/grid to migrate to', $options);
-        return (int) \array_search($version, $options);
-    }
-
-    protected function askForParentTheme(SymfonyStyle $io): int
-    {
-        $layouts = ThemeModel::findAll();
-        $layoutOptions = [
-            'new' => 'Create a new theme',
-        ];
-        foreach ($layouts as $layout) {
-            $layoutOptions[$layout->id] = $layout->name;
-        }
-        $id = $io->choice('Select the parent theme to assign the new grid columns to', $layoutOptions);
-        return (int) $id;  // (int) "new" === 0
+        $result = $stmt->executeStatement();
     }
 
     /**
@@ -258,17 +346,21 @@ class MigrateSubcolumnsCommand extends Command
      * @return void
      * @throws DBALException
      */
-    protected function migrateGlobalSubcolumns(array $globalSubcolumns): void
+    protected function migrateGlobalSubcolumns(array $globalSubcolumns): array
     {
         $stmt = $this->connection
-            ->prepare('SELECT description FROM tl_bs_grid WHERE pid = ? AND description LIKE "[sub2col:%"');
-        $stmt->bindValue(1, $this->parentLayoutId);
+            ->prepare('SELECT id, description FROM tl_bs_grid WHERE pid = ? AND description LIKE "[sub2col:%"');
+        $stmt->bindValue(1, $this->parentThemeId);
         $migratedResult = $stmt->executeQuery();
 
         $migrated = [];
         while ($row = $migratedResult->fetchAssociative()) {
-            $migrated[] = \substr($row['description'], 9, -1);
+            $identifier = \substr($row['description'], 9, -1);
+            $migrated[] = $identifier;
+            $this->mapMigratedGlobalSetsToId[$identifier] = (int) $row['id'];
         }
+
+        $newlyMigrated = [];
 
         $this->connection->beginTransaction();
         foreach ($globalSubcolumns as $colset)
@@ -279,8 +371,11 @@ class MigrateSubcolumnsCommand extends Command
             $id = $this->migrateGlobalSubcolumn($colset);
             $colset->setMigratedId($id);
             $this->mapMigratedGlobalSetsToId[$colset->getIdentifier()] = $id;
+            $newlyMigrated[] = $colset->getIdentifier();
         }
         $this->connection->commit();
+
+        return $newlyMigrated;
     }
 
     /**
@@ -313,7 +408,7 @@ class MigrateSubcolumnsCommand extends Command
                 (:pid, :tstamp, :title, :description, :sizes, :rowClass, :xsSize, :smSize, :mdSize, :lgSize, :xlSize, :xxlSize); 
         SQL);
 
-        $stmt->bindValue('pid', $this->parentLayoutId);
+        $stmt->bindValue('pid', $this->parentThemeId);
         $stmt->bindValue('tstamp', time());
         $stmt->bindValue('title', $colset->getTitle());
         $stmt->bindValue('description', \sprintf('[sub2col:%s]', $colset->getIdentifier()));
@@ -518,6 +613,106 @@ class MigrateSubcolumnsCommand extends Command
         }
     }
 
+    //<editor-fold desc="Grid version handling">
+
+    /**
+     * @throws \Exception
+     */
+    protected function initGridVersion(InputInterface $input, SymfonyStyle $io)
+    {
+        $gridVersion = $input->getOption('grid-version');
+        if ($gridVersion !== null && \in_array($gridVersion = (int) \ltrim($gridVersion, ' :='), [2, 3])) {
+            $this->gridVersion = $gridVersion;
+            $io->info("Migrating to contao-bootstrap/grid version $gridVersion.");
+            return;
+        }
+
+        if (!isset($this->gridVersion)) {
+            $version = ContaoCoreBundle::getVersion();
+            $isContao5 = \version_compare($version, '5', '>=');
+            if ($isContao5) {
+                $io->info("Detected Contao version $version. Migrating to contao-bootstrap/grid version 3.");
+                $this->gridVersion = 3;
+            } else {
+                $io->comment("Detected Contao version $version.");
+                $this->gridVersion = $this->askForGridVersion($io);
+            }
+        }
+
+        if ($this->gridVersion === 3 && \version_compare(\phpversion(), '8.1', '<')) {
+            throw new \Exception('Grid version 3 is incompatible with php version < 8.1');
+        }
+
+        if (empty($this->gridVersion)) {
+            throw new \Exception('No grid version defined.');
+        }
+    }
+
+    protected function askForGridVersion(SymfonyStyle $io): int
+    {
+        $options = [
+            2 => 'contao-bootstrap/grid: ^2',
+            3 => 'contao-bootstrap/grid: ^3',
+        ];
+        $version = $io->choice('Select the version of contao-bootstrap/grid to migrate to', $options);
+        return (int) \array_search($version, $options);
+    }
+
+    //</editor-fold>
+
+    //<editor-fold desc="Parent theme handling">
+
+    /**
+     * @throws \Exception
+     */
+    protected function initParentThemeId(InputInterface $input, SymfonyStyle $io): void
+    {
+        $parentLayoutId = $input->getOption('parent-theme');  // caution: can be "0"
+        if ($parentLayoutId !== null && \is_numeric($parentLayoutId = \ltrim($parentLayoutId, ' :='))) {
+            $this->parentThemeId = (int) $parentLayoutId;
+        }
+
+        if (!isset($this->parentThemeId)) {
+            $this->parentThemeId = $this->askForParentTheme($io);
+        }
+
+        if ($this->parentThemeId === 0) {
+            $this->parentThemeId = $this->createNewTheme();
+        }
+
+        if (!$this->parentThemeId || $this->parentThemeId < 1) {
+            throw new \Exception('No parent theme defined.');
+        }
+    }
+
+    protected function askForParentTheme(SymfonyStyle $io): int
+    {
+        $layouts = ThemeModel::findAll();
+        $layoutOptions = [
+            'new' => 'Create a new theme',
+        ];
+        foreach ($layouts as $layout) {
+            $layoutOptions[$layout->id] = $layout->name;
+        }
+        $id = $io->choice('Select the parent theme to assign the new grid columns to', $layoutOptions);
+        return (int) $id;  // (int) "new" === 0
+    }
+
+    protected function createNewTheme(): int
+    {
+        $layout = new ThemeModel();
+        $layout->setRow([
+            'tstamp' => time(),
+            'name' => 'Grids migrated from SubColumns',
+            'author' => 'Subcolumns2Grid',
+            'vars' => \serialize([])
+        ]);
+        $layout->save();
+        return $layout->id;
+    }
+
+    //</editor-fold>
+
     /**
      * @throws DBALException
      */
@@ -525,7 +720,7 @@ class MigrateSubcolumnsCommand extends Command
     {
         $config = new MigrationConfig();
 
-        $from = $this->autoFrom($input);
+        $from = $this->smartGetFrom($input);
         $config->setFrom($from);
 
         switch ($from)
@@ -561,20 +756,33 @@ class MigrateSubcolumnsCommand extends Command
         return $config;
     }
 
+    //<editor-fold desc="Get option 'from'">
+
     /**
      * @throws DBALException
      */
-    protected function autoFrom(InputInterface $input): int
+    protected function smartGetFrom(InputInterface $input): int
+    {
+        return $this->getFrom($input) ?? $this->autoDetectFrom();
+    }
+
+    protected function getFrom(InputInterface $input): ?int
     {
         $from = ($from = $input->getOption('from')) ? \ltrim($from, ' :=') : null;
 
         switch ($from) {
-            case null: break;
+            case null: return null;
             case 'm': return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
             case 'b': return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
             default: throw new \InvalidArgumentException('Invalid source.');
         }
+    }
 
+    /**
+     * @throws DBALException
+     */
+    protected function autoDetectFrom(): ?int
+    {
         if (class_exists( SubColumnsBootstrapBundle::class)) {
             return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
         }
@@ -593,6 +801,8 @@ class MigrateSubcolumnsCommand extends Command
             return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
         }
 
-        return 0;
+        return null;
     }
+
+    //</editor-fold>
 }
