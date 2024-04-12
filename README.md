@@ -8,14 +8,6 @@ to
 - [`contao-bootstrap/grid` version 2](https://github.com/contao-bootstrap/grid)
 - [`contao-bootstrap/grid` version 3](https://contao-bootstrap.de/bootstrap-5-verwenden.html)
 
-## Installation
-
-Install via composer:
-
-```bash
-composer require heimrichhannot/contao-subcolumns2grid-migration-bundle:dev-trunk
-```
-
 
 ## Prerequisites
 
@@ -28,6 +20,15 @@ composer require heimrichhannot/contao-subcolumns2grid-migration-bundle:dev-trun
 
 > **Note:** Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
 > although it does not hurt if they are.
+
+
+## Installation
+
+Install via composer:
+
+```bash
+composer require heimrichhannot/contao-subcolumns2grid-migration-bundle:dev-trunk
+```
 
 ## Usage
 
