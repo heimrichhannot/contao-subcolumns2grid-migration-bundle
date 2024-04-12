@@ -10,7 +10,6 @@ use Contao\StringUtil;
 use Contao\ThemeModel;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\Driver\PDO\Exception;
 use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\ParameterType;
 use FelixPfeiffer\Subcolumns\ModuleSubcolumns;
@@ -188,7 +187,7 @@ class MigrateSubcolumnsCommand extends Command
 
         $result = $stmt->executeQuery();
 
-        if (((int) $result->fetchOne()) < 1)
+        if ((int)$result->fetchOne() < 1)
             // sc_columnset does not exist in tl_content,
             // therefore we can assume that only module content elements exist
         {
@@ -207,12 +206,11 @@ class MigrateSubcolumnsCommand extends Command
 
         // if there are colset elements with a sc_type but no sc_columnset,
         // they have to be module content elements
-        return ((int) $result->fetchOne()) > 0;
+        return (int)$result->fetchOne() > 0;
     }
 
     /**
-     * @throws DBALException
-     * @throws Throwable
+     * @throws DBALException|Throwable
      */
     protected function transformModuleContentElements(): void
     {
@@ -251,8 +249,7 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws Throwable
-     * @throws DBALException
+     * @throws DBALException|Throwable
      */
     protected function transformContentElements(array $contentElements): void
     {
@@ -272,7 +269,7 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException
+     * @throws DBALException|\DomainException
      */
     protected function transformSubcolumnSetIntoGrid(int $parentId, array $rows): void
     {
@@ -338,7 +335,7 @@ class MigrateSubcolumnsCommand extends Command
             $stmt->bindValue('child_' . $index, $childId, ParameterType::INTEGER);
         }
 
-        $result = $stmt->executeStatement();
+        $stmt->executeStatement();
     }
 
     /**
@@ -349,13 +346,16 @@ class MigrateSubcolumnsCommand extends Command
     protected function migrateGlobalSubcolumns(array $globalSubcolumns): array
     {
         $stmt = $this->connection
-            ->prepare('SELECT id, description FROM tl_bs_grid WHERE pid = ? AND description LIKE "[sub2col:%"');
+            ->prepare('SELECT id, description FROM tl_bs_grid WHERE pid = ? AND description LIKE "%[sub2col:%"');
         $stmt->bindValue(1, $this->parentThemeId);
         $migratedResult = $stmt->executeQuery();
 
         $migrated = [];
         while ($row = $migratedResult->fetchAssociative()) {
-            $identifier = \substr($row['description'], 9, -1);
+            $identifier = \preg_match('/\[sub2col:([^]]+)]/i', $row['description'], $matches)
+                ? $matches[1]
+                : null;
+            if (!$identifier) continue;
             $migrated[] = $identifier;
             $this->mapMigratedGlobalSetsToId[$identifier] = (int) $row['id'];
         }
@@ -496,7 +496,7 @@ class MigrateSubcolumnsCommand extends Command
 
             $customClasses = [];
             $classNames = \explode(' ', \preg_replace('/\s+/i', ' ', $singleCol[0]));
-            $colClasses = $this->filterClassNames($classNames, $customClasses);
+            $colClasses = $this->createClassNames($classNames, $customClasses);
 
             foreach ($colClasses as $objColClass)
             {
@@ -597,7 +597,7 @@ class MigrateSubcolumnsCommand extends Command
         }
     }
 
-    protected function filterClassNames(array $classNames, array &$customClasses = []): array
+    protected function createClassNames(array $classNames, array &$customClasses = []): array
     {
         return \array_filter(
             \array_map(static function ($strClass) use (&$customClasses) {
