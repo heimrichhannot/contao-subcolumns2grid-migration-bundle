@@ -22,7 +22,7 @@ class ColumnDefinition implements \Serializable
         self::RESET_SIZE,
     ];
 
-    public function getSpan(): string
+    public function getSpan(): ?string
     {
         return $this->span;
     }
@@ -55,7 +55,7 @@ class ColumnDefinition implements \Serializable
         return $this;
     }
 
-    public function getVerticalAlign(): string
+    public function getVerticalAlign(): ?string
     {
         return $this->verticalAlign;
     }
@@ -69,7 +69,7 @@ class ColumnDefinition implements \Serializable
         return $this;
     }
 
-    public function getCustomClasses(): string
+    public function getCustomClasses(): ?string
     {
         return $this->customClasses;
     }
@@ -80,7 +80,7 @@ class ColumnDefinition implements \Serializable
         return $this;
     }
 
-    public function getReset(): string
+    public function getReset(): ?string
     {
         return $this->reset;
     }

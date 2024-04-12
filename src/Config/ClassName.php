@@ -19,18 +19,19 @@ class ClassName
             return null;
         }
 
-        $matches = [];
+        $class = new self();
+        $class->class = $strClass;
 
         $rx = "/(?P<type>(?:col-)?offset|col|order)(?:-(?P<breakpoint>xxs|xs|sm|md|lg|xl|xxl))?(?:-(?P<width>\d+))?/i";
         if (!\preg_match_all($rx, $strClass, $matches))
         {
+            $class->breakpoint = '';
+            $class->width = '';
+            $class->type = '';
             $customClasses[] = $strClass;
-            return null;
+            return $class;
         }
 
-        $class = new self();
-
-        $class->class = $strClass;
         $class->breakpoint = $matches['breakpoint'][0] ?? '';
         $class->width = $matches['width'][0] ?? '';
 

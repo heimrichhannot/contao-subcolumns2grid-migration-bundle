@@ -51,6 +51,7 @@ class MigrateSubcolumnsCommand extends Command
     protected int $parentThemeId;
     protected bool $skipConfirmations = false;
     protected int $gridVersion;
+    protected SymfonyStyle $io;
 
     public function __construct(Connection $connection, ContaoFramework $framework, ?string $name = null)
     {
@@ -96,6 +97,7 @@ class MigrateSubcolumnsCommand extends Command
         $this->framework->initialize();
 
         $io = new SymfonyStyle($input, $output);
+        $this->io = $io;
         $io->title('Migrating subcolumns to grid columns');
 
         $io->note('This command will migrate existing subcolumns to grid columns. Please make sure to backup your database before running this command.');
@@ -130,8 +132,7 @@ class MigrateSubcolumnsCommand extends Command
                 $globalSubcolumns = $this->fetchGlobalSetDefinitions();
 
                 $io->comment('Migrating global subcolumn definitions.');
-                $newlyMigratedSubcolumns = $this->migrateGlobalSubcolumns($globalSubcolumns);
-                if (empty($newlyMigratedSubcolumns)) {
+                if (empty($this->migrateGlobalSubcolumns($globalSubcolumns))) {
                     $io->info('No new global subcolumn definitions had to be migrated.');
                 } else {
                     $io->success('Migrated global subcolumn definitions successfully.');
@@ -160,6 +161,7 @@ class MigrateSubcolumnsCommand extends Command
         catch (\Throwable $e)
         {
             $io->error($e->getMessage());
+            $io->getErrorStyle()->block($e->getTraceAsString());
             return Command::FAILURE;
         }
 
@@ -283,8 +285,10 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $start = \array_filter($rows, static function (ContentElementDTO $row) use ($parentId) {
-            return $row->getScType() === self::CE_TYPE_COLSET_START && $row->getId() === $parentId;
-        })[0] ?? null;
+            return $row->getType() === self::CE_TYPE_COLSET_START && $row->getId() === $parentId;
+        });
+
+        $start = \reset($start) ?? null;
 
         if (!$start) {
             throw new \DomainException('No start element found for subcolumn set.');
@@ -340,7 +344,6 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @param array<ColSetDefinition> $globalSubcolumns
-     * @return void
      * @throws DBALException
      */
     protected function migrateGlobalSubcolumns(array $globalSubcolumns): array
@@ -353,7 +356,7 @@ class MigrateSubcolumnsCommand extends Command
         $migrated = [];
         while ($row = $migratedResult->fetchAssociative()) {
             $identifier = \preg_match('/\[sub2col:([^]]+)]/i', $row['description'], $matches)
-                ? $matches[1]
+                ? $matches[1] ?? null
                 : null;
             if (!$identifier) continue;
             $migrated[] = $identifier;
@@ -413,7 +416,7 @@ class MigrateSubcolumnsCommand extends Command
         $stmt->bindValue('title', $colset->getTitle());
         $stmt->bindValue('description', \sprintf('[sub2col:%s]', $colset->getIdentifier()));
         $stmt->bindValue('sizes', \serialize($sizes));
-        $stmt->bindValue('rowClass', '');
+        $stmt->bindValue('rowClass', $colset->getRowClasses() ?? '');
         $stmt->bindValue('xsSize', $serializeCol('xs'));
         $stmt->bindValue('smSize', $serializeCol('sm'));
         $stmt->bindValue('mdSize', $serializeCol('md'));
@@ -461,15 +464,30 @@ class MigrateSubcolumnsCommand extends Command
             {
                 $sizes = $this->getSetDefinitionsFromArray($globalColsConfig);
 
+                if (empty($sizes)) {
+                    continue;
+                }
+
                 $idSource = $profileName === 'bootstrap' ? 'bootstrap3' : $profileName;
                 $identifier = \sprintf('globals.%s.%s', $idSource, $setName);
+                $maxColCount = \max(\array_map('count', $sizes) ?: [0]);
+                $rowClasses = "colcount_$maxColCount $idSource col-$setName sc-type-$setName";
 
                 $colset = ColSetDefinition::create()
                     ->setIdentifier($identifier)
                     ->setTitle("$label: $setName [global]")
                     ->setPublished(true)
                     ->setSizeDefinitions($sizes)
+                    ->setRowClasses($rowClasses)
                 ;
+
+                if ($colset->getRowClasses() !== $rowClasses) {
+                    $this->io->note(
+                        "Row classes truncated for \"$identifier\" due to length limitations.\n".
+                        "Should be: \"$rowClasses\"\n" .
+                        "   Is now: \"" . $colset->getRowClasses() . "\""
+                    );
+                }
 
                 $colsetDefinitions[] = $colset;
             }
@@ -527,6 +545,22 @@ class MigrateSubcolumnsCommand extends Command
             }
 
             $colIndex++;
+        }
+
+        // make sure that all breakpoints have the same amount of columns
+
+        $colCount = \max(\array_map('count', $sizes) ?: [0]);
+
+        foreach ($sizes as $breakpoint => $cols)
+        {
+            if (\count($cols) < $colCount)
+            {
+                for ($i = 0; $i < $colCount; $i++)
+                {
+                    $cols[$i] ??= ColumnDefinition::create();
+                }
+                $sizes[$breakpoint] = $cols;
+            }
         }
 
         $this->applyUnspecificSizes($sizes);

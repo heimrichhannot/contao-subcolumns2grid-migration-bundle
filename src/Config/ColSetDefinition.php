@@ -6,21 +6,22 @@ use Exception;
 
 class ColSetDefinition implements \Countable
 {
-    protected int $count;
-    protected string $identifier;
-    protected string $title;
-    protected bool $useOutside;
-    protected string $outsideClass;
-    protected bool $useInside;
-    protected string $insideClass = 'inside';
-    protected bool $published;
-    protected string $cssID;
+    protected ?int $count;
+    protected ?string $identifier;
+    protected ?string $title;
+    protected ?bool $useOutside;
+    protected ?string $outsideClass;
+    protected ?bool $useInside;
+    protected ?string $insideClass = 'inside';
+    protected ?bool $published = false;
+    protected ?string $cssID;
+    protected ?string $rowClasses;
     /** @var array<string, array<int, ColumnDefinition>> */
     protected array $sizeDefinitions = [];
 
     protected ?int $migratedId = null;
 
-    public function getIdentifier(): string
+    public function getIdentifier(): ?string
     {
         return $this->identifier;
     }
@@ -31,7 +32,7 @@ class ColSetDefinition implements \Countable
         return $this;
     }
 
-    public function getTitle(): string
+    public function getTitle(): ?string
     {
         return $this->title;
     }
@@ -42,7 +43,7 @@ class ColSetDefinition implements \Countable
         return $this;
     }
 
-    public function getUseOutside(): bool
+    public function getUseOutside(): ?bool
     {
         return $this->useOutside;
     }
@@ -53,7 +54,7 @@ class ColSetDefinition implements \Countable
         return $this;
     }
 
-    public function getOutsideClass(): string
+    public function getOutsideClass(): ?string
     {
         return $this->outsideClass;
     }
@@ -64,7 +65,7 @@ class ColSetDefinition implements \Countable
         return $this;
     }
 
-    public function getUseInside(): bool
+    public function getUseInside(): ?bool
     {
         return $this->useInside;
     }
@@ -75,7 +76,7 @@ class ColSetDefinition implements \Countable
         return $this;
     }
 
-    public function getInsideClass(): string
+    public function getInsideClass(): ?string
     {
         return $this->insideClass;
     }
@@ -86,7 +87,7 @@ class ColSetDefinition implements \Countable
         return $this;
     }
 
-    public function getPublished(): bool
+    public function getPublished(): ?bool
     {
         return $this->published;
     }
@@ -142,6 +143,28 @@ class ColSetDefinition implements \Countable
     {
         $this->migratedId = $migratedId;
         return $this;
+    }
+
+    public function setRowClasses(string $rowClasses): self
+    {
+        if (\strlen($rowClasses) <= 64) {
+            $this->rowClasses = $rowClasses;
+            return $this;
+        }
+
+        $arrClasses = \explode(' ', $rowClasses);
+        $arrClasses = \array_unique($arrClasses);
+        while (\strlen($rowClasses = \implode(' ', $arrClasses)) > 64) {
+            \array_pop($arrClasses);
+        }
+
+        $this->rowClasses = $rowClasses;
+        return $this;
+    }
+
+    public function getRowClasses(): ?string
+    {
+        return $this->rowClasses ?? null;
     }
 
     public function count(): int
