@@ -11,6 +11,7 @@ class ContentElementDTO
     protected ?string $sc_type;
     protected ?string $sc_name;
     protected ?string $identifier;
+    protected ?string $customTpl = null;
 
     public function getId(): int
     {
@@ -89,6 +90,17 @@ class ContentElementDTO
         return $this;
     }
 
+    public function getCustomTpl(): string
+    {
+        return $this->customTpl;
+    }
+
+    public function setCustomTpl(string $customTpl): ContentElementDTO
+    {
+        $this->customTpl = $customTpl;
+        return $this;
+    }
+
     public function setRow(array $row): ContentElementDTO
     {
         $this->id = $row['id'] ?? $this->id ?? null;
@@ -97,6 +109,8 @@ class ContentElementDTO
         $this->sc_parent = $row['sc_parent'] ?? $this->sc_parent ?? null;
         $this->sc_type = $row['sc_type'] ?? $this->sc_type ?? null;
         $this->sc_name = $row['sc_name'] ?? $this->sc_name ?? null;
+        $this->identifier = $row['sc_columnset'] ?? $this->identifier ?? null;
+        $this->customTpl = $row['customTpl'] ?? $this->customTpl ?? null;
         return $this;
     }
 

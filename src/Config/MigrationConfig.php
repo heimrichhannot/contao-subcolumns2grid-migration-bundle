@@ -23,9 +23,11 @@ class MigrationConfig
     protected ?int $from = null;
     protected int $gridVersion;
     protected int $parentThemeId;
-    /** @var ColSetDefinition[] */
+    /** @var array<string, ColSetDefinition> */
     protected array $globalSubcolumnDefinitions = [];
     protected array $migratedIdentifiers = [];
+    /** @var string[] $notes */
+    protected array $notes = [];
 
     public function getSources(): array
     {
@@ -96,13 +98,20 @@ class MigrationConfig
         return $this;
     }
 
+    /** @return ColumnDefinition[] */
     public function getGlobalSubcolumnDefinitions(): array
     {
         return $this->globalSubcolumnDefinitions;
     }
 
+    public function getSubcolumnDefinition(string $identifier): ?ColSetDefinition
+    {
+        # todo: extend with db sets
+        return $this->globalSubcolumnDefinitions[$identifier] ?? null;
+    }
+
     /**
-     * @param array<ColSetDefinition> $globalSubcolumns
+     * @param array<string, ColSetDefinition> $globalSubcolumns
      * @return $this
      */
     public function setGlobalSubcolumnDefinitions(array $globalSubcolumns): self
@@ -119,6 +128,29 @@ class MigrationConfig
     public function setMigratedIdentifiers(array $migratedIdentifiers): self
     {
         $this->migratedIdentifiers = $migratedIdentifiers;
+        return $this;
+    }
+
+    public function addMigratedIdentifiers(string ...$migratedIdentifiers): self
+    {
+        $this->migratedIdentifiers = \array_merge($this->migratedIdentifiers, $migratedIdentifiers);
+        return $this;
+    }
+
+    public function getNotes(): array
+    {
+        return $this->notes;
+    }
+
+    public function addNotes(string ...$notes): self
+    {
+        $this->notes = \array_merge($this->notes, $notes);
+        return $this;
+    }
+
+    public function addNote(string $note): self
+    {
+        $this->notes[] = $note;
         return $this;
     }
 

@@ -56,7 +56,8 @@ class MigrateSubcolumnsCommand extends Command
     protected KernelInterface $kernel;
     protected ParameterBagInterface $parameterBag;
 
-    protected array $mapMigratedGlobalSubcolumnDefinitionsToId = [];
+    protected array $mapMigratedGlobalSubcolumnDefinitionsToBsGridId = [];
+    protected array $mapMigratedGridIdToSubcolumnDefinitions = [];
     protected array $mapMigratedDBSetsToId = [];
     protected bool $skipConfirmations = false;
     protected SymfonyStyle $io;
@@ -167,9 +168,10 @@ class MigrateSubcolumnsCommand extends Command
         $config->setMigratedIdentifiers($migratedIdentifiers);
         $io->listing($migratedIdentifiers);
         $io->info(\sprintf(
-            'Found %s already migrated sub-column sets on theme %s, which will be skipped.',
-            \count($migratedIdentifiers),
-            $config->getParentThemeId()
+            'Found %s already migrated sub-column sets on theme %s%s.',
+            $migratedIdentifiersCount = \count($migratedIdentifiers),
+            $config->getParentThemeId(),
+            $migratedIdentifiersCount > 0 ? ', which will be skipped' : ''
         ));
 
         if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
@@ -187,6 +189,10 @@ class MigrateSubcolumnsCommand extends Command
         //     }
         // }
 
+        foreach ($config->getNotes() as $note) {
+            $io->note($note);
+        }
+
         $io->success('Migration completed successfully.');
 
         return Command::SUCCESS;
@@ -201,7 +207,7 @@ class MigrateSubcolumnsCommand extends Command
         $io->section('Migrating globally defined sub-column profiles');
 
         $io->text('Fetching definitions from globals.');
-        $globalSubcolumns = $this->fetchGlobalSetDefinitions();
+        $globalSubcolumns = $this->fetchGlobalSetDefinitions($config);
 
         if (empty($globalSubcolumns)) {
             $io->caution('Skipping migration of globally defined sub-column profiles, as none were found.');
@@ -209,7 +215,6 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $config->setGlobalSubcolumnDefinitions($globalSubcolumns);
-
         $io->listing(\array_map(static function (ColSetDefinition $colset) {
             return $colset->getIdentifier();
         }, $globalSubcolumns));
@@ -231,6 +236,7 @@ class MigrateSubcolumnsCommand extends Command
             $io->info('No globally defined sub-column sets had to be migrated anew.');
         } else {
             $io->listing($newlyMigratedIdentifiers);
+            $config->addMigratedIdentifiers(...$newlyMigratedIdentifiers);
             $io->success('Migrated global sub-column definitions successfully.');
         }
 
@@ -238,7 +244,10 @@ class MigrateSubcolumnsCommand extends Command
         if ($this->checkIfModuleContentElementsExist())
         {
             $io->text('Migrating module content elements.');
-            $this->transformModuleContentElements();
+            $this->transformModuleContentElements($config);
+
+            $io->text('Updating content element templates.');
+            $this->updateContentElementTemplates($config);
 
             $io->success('Migrated module content elements successfully.');
         }
@@ -248,115 +257,26 @@ class MigrateSubcolumnsCommand extends Command
         }
     }
 
-    /**
-     * Copies the templates from this bundle's contao/templates to the project directory.
-     * @param array<ColSetDefinition> $colSets
-     * @return array The prepared files.
-     */
-    protected function prepareTemplates(array $colSets): array
+    protected function updateContentElementTemplates(MigrationConfig $config): void
     {
-        $source = $this->getBundlePath() . '/contao/templates';
-        $target = $this->parameterBag->get('kernel.project_dir') . '/templates/elements';
-
-        if (!is_dir($target))
-        {
-            mkdir($target, 0777, true);
-        }
-
-        $insideClasses = [];
-
-        foreach ($colSets as $colSet)
-        {
-            if ($colSet->getInsideClass())
-            {
-                $insideClasses[] = $colSet->getInsideClass();
-            }
-        }
-
-        $copied = [];
-        foreach (\array_unique($insideClasses) as $insideClass)
-        {
-            $copied = \array_merge($copied, $this->copyTemplates($source, $target, 'inner', ['{insideClass}' => $insideClass]));
-        }
-
-        return $copied;
-    }
-
-    /**
-     * @param string $source The source directory.
-     * @param string $target The target directory.
-     * @param string $suffix The suffix included in the file name.
-     * @param array $replace The keys to replace in the template content and source file name.
-     * @return array The copied files.
-     */
-    protected function copyTemplates(string $source, string $target, string $suffix = '', array $replace = []): array
-    {
-        if (!\is_dir($source)) {
-            throw new \RuntimeException('Template source directory not found. Please reinstall the bundle.');
-        }
-
-        if (!\is_dir($target)) {
-            throw new \RuntimeException('Template target directory not found.');
-        }
-
-        if ($suffix && \substr($suffix, 0, 1) !== '_') {
-            $suffix = '_' . $suffix;
-        }
-
-        $rx = "/ce_bs_gridS(tart|eparator|top)$suffix(_[a-zA-Z0-9{}_]+)/";
-
-        $search = \array_keys($replace);
-        $replace = \array_values($replace);
-
-        $copied = [];
-
-        foreach (\scandir($source) as $file)
-        {
-            if ($file === '.' || $file === '..') continue;
-            if (!\preg_match($rx, $file)) continue;
-
-            $destination = $target . \DIRECTORY_SEPARATOR . \str_replace($search, $replace, $file);
-            if (\file_exists($destination)) continue;
-
-            $sourceFile = $source . \DIRECTORY_SEPARATOR . $file;
-
-            if ($this->copyTemplateFile($sourceFile, $destination, $file, $search, $replace) === false)
-            {
-                throw new \RuntimeException('Could not copy template file.');
-            }
-
-            $copied[] = $destination;
-        }
-
-        return $copied;
-    }
-
-    /**
-     * @param string $source The source file path.
-     * @param string $target The target file path.
-     * @param string $cacheKey The cache key for the template content.
-     * @param array $search The keys to replace in the template content.
-     * @param array $replace The values to replace the keys with.
-     * @return false|int The number of bytes written to the file, or false on failure.
-     */
-    protected function copyTemplateFile(
-        string $source,
-        string $target,
-        string $cacheKey,
-        array  $search,
-        array  $replace
-    ) {
-        if (\in_array($cacheKey, \array_keys($this->templateCache), true))
-        {
-            $content = $this->templateCache[$cacheKey];
-        }
-        else
-        {
-            $content = \file_get_contents($source);
-            $this->templateCache[$cacheKey] = $content;
-        }
-
-        return \file_put_contents($target, \str_replace($search, $replace, $content));
+        // foreach ($config->getGlobalSubcolumnDefinitions() as $colset)
+        // {
+        //     // $colset->
+        // }
+        //
+        // $stmt = $this->connection->prepare(<<<'SQL'
+        //     UPDATE tl_content
+        //        SET customTpl = CASE
+        //                WHEN customTpl != '' THEN customTpl
+        //                WHEN type = "start" THEN :customTplStart
+        //                WHEN type = "seperator" THEN :customTplSeperator
+        //                WHEN type = "stop" THEN :customTplStop
+        //                ELSE ''
+        //            END
+        //      WHERE type IN (:types)
+        // SQL);
+        //
+        // $stmt->executeStatement();
     }
 
     /**
@@ -400,10 +320,30 @@ class MigrateSubcolumnsCommand extends Command
         return (int)$result->fetchOne() > 0;
     }
 
+    protected function getColumnTemplateFromIdentifier(
+        MigrationConfig $config,
+        string          $identifier,
+        string          $ceType
+    ): ?string {
+        $def = $config->getSubcolumnDefinition($identifier);
+        if (!$def) {
+            throw new \DomainException("No sub-column definition found for identifier \"$identifier\".");
+        }
+
+        $insideClass = $def->getInsideClass();
+        if (!$def->getUseInside() || !$insideClass) {
+            return null;
+        }
+
+        $type = self::CE_RENAME[$ceType];
+
+        return "ce_{$type}_inner_$insideClass";
+    }
+
     /**
      * @throws DBALException|Throwable
      */
-    protected function transformModuleContentElements(): void
+    protected function transformModuleContentElements(MigrationConfig $config): void
     {
         $currentProfile = Config::get('subcolumns');
 
@@ -420,19 +360,29 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $stmt = $this->connection->prepare(<<<'SQL'
-            SELECT id, type, sc_childs, sc_parent, sc_type, sc_name
+            SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name
               FROM tl_content
              WHERE type LIKE "colset%"
                AND sc_columnset = ""
         SQL);
         $result = $stmt->executeQuery();
 
+        /** @var array<string, ContentElementDTO[]> $contentElements */
         $contentElements = [];
 
         while ($row = $result->fetchAssociative())
         {
             $ce = ContentElementDTO::fromRow($row);
-            $ce->setIdentifier(\sprintf('globals.%s.%s', $currentProfile, $ce->getScType()));
+
+            $identifier = \sprintf('globals.%s.%s', $currentProfile, $ce->getScType());
+            $ce->setIdentifier($identifier);
+
+            if (!$ce->getCustomTpl())
+            {
+                $customTpl = $this->getColumnTemplateFromIdentifier($config, $identifier, $ce->getType());
+                $ce->setCustomTpl($customTpl ?? '');
+            }
+
             $contentElements[$ce->getScParent()][] = $ce;
         }
 
@@ -447,9 +397,9 @@ class MigrateSubcolumnsCommand extends Command
         $this->connection->beginTransaction();
 
         try {
-            foreach ($contentElements as $parentId => $rows)
+            foreach ($contentElements as $parentId => $ceDTOs)
             {
-                $this->transformSubcolumnSetIntoGrid($parentId, $rows);
+                $this->transformSubcolumnSetIntoGrid($parentId, $ceDTOs);
             }
         } catch (\Throwable $e) {
             $this->connection->rollBack();
@@ -460,35 +410,58 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
+     * @param int $parentId
+     * @param ContentElementDTO[] $ceDTOs
      * @throws DBALException|\DomainException
      */
-    protected function transformSubcolumnSetIntoGrid(int $parentId, array $rows): void
+    protected function transformSubcolumnSetIntoGrid(int $parentId, array $ceDTOs): void
     {
-        if (empty($rows) || \count($rows) < 2) {
+        if (empty($ceDTOs) || \count($ceDTOs) < 2) {
             throw new \DomainException('No or not enough content elements found for valid subcolumn set.');
         }
 
-        $gridId = $this->mapMigratedGlobalSubcolumnDefinitionsToId[$rows[0]->getIdentifier()] ?? null;
+        $gridId = $this->mapMigratedGlobalSubcolumnDefinitionsToBsGridId[$ceDTOs[0]->getIdentifier()] ?? null;
         if (!$gridId) {
             throw new \DomainException('No migrated global set found for content element.');
         }
 
-        $start = \array_filter($rows, static function (ContentElementDTO $row) use ($parentId) {
-            return $row->getType() === self::CE_TYPE_COLSET_START && $row->getId() === $parentId;
-        });
+        $start = null;
+        $parts = [];
+        $stop = null;
 
-        $start = \reset($start) ?? null;
-
-        if (!$start) {
-            throw new \DomainException('No start element found for subcolumn set.');
+        foreach ($ceDTOs as $ce) {
+            switch ($ce->getType()) {
+                case self::CE_TYPE_COLSET_START:
+                    if ($ce->getId() !== $parentId) {
+                        throw new \DomainException('Start element\'s parent id does not match.');
+                    }
+                    if ($start !== null) {
+                        throw new \DomainException('Multiple start elements found for subcolumn set.');
+                    }
+                    $start = $ce;
+                    break;
+                case self::CE_TYPE_COLSET_PART:
+                    $parts[] = $ce;
+                    break;
+                case self::CE_TYPE_COLSET_END:
+                    if ($stop !== null) {
+                        throw new \DomainException('Multiple stop elements found for subcolumn set.');
+                    }
+                    $stop = $ce;
+                    break;
+            }
         }
+
+        if (!$start) throw new \DomainException('No start element found for subcolumn set.');
+        if (!$stop)  throw new \DomainException('No stop element found for subcolumn set.');
 
         $stmt = $this->connection->prepare(<<<'SQL'
             UPDATE tl_content
                SET bs_grid_parent = :parentId,
                    bs_grid_name = :name,
                    bs_grid = :gridId,
-                   type = :renameType
+                   type = :renameType,
+                   customTpl = :customTpl
              WHERE id = :id
         SQL);
 
@@ -496,13 +469,15 @@ class MigrateSubcolumnsCommand extends Command
         $stmt->bindValue('name', $start->getScName());
         $stmt->bindValue('gridId', $gridId);
         $stmt->bindValue('renameType', self::CE_RENAME[self::CE_TYPE_COLSET_START]);
+        $stmt->bindValue('customTpl', $start->getCustomTpl() ?? '');
         $stmt->bindValue('id', $start->getId());
 
         $stmt->executeStatement();
 
-        $childIds = \array_filter(\array_map(static function (ContentElementDTO $row) {
-            return $row->getId();
-        }, \array_slice($rows, 1)));
+        $childIds = \array_filter(\array_map(static function (ContentElementDTO $row) use ($start) {
+            $rowId = $row->getId();
+            return $rowId !== $start->getId() ? $rowId : null;
+        }, $ceDTOs));
 
         $placeholders = [];
         foreach ($childIds as $index => $childId) {
@@ -513,7 +488,13 @@ class MigrateSubcolumnsCommand extends Command
         $stmt = $this->connection->prepare(<<<SQL
             UPDATE tl_content
                SET bs_grid_parent = :parentId,
-                   type = REPLACE(REPLACE(type, :oPart, :rPart), :oStop, :rStop)
+                   type = REPLACE(REPLACE(type, :oPart, :rPart), :oStop, :rStop),
+                   customTpl = CASE 
+                       WHEN customTpl != '' THEN customTpl
+                       WHEN type = :oPart OR type = :rPart THEN :customTplPart
+                       WHEN type = :oStop OR type = :rStop THEN :customTplStop
+                       ELSE ''
+                   END
              WHERE id IN ($placeholders)
                AND type LIKE "colset%"
         SQL);
@@ -523,6 +504,8 @@ class MigrateSubcolumnsCommand extends Command
         $stmt->bindValue('rPart', self::CE_RENAME[self::CE_TYPE_COLSET_PART]);
         $stmt->bindValue('oStop', self::CE_TYPE_COLSET_END);
         $stmt->bindValue('rStop', self::CE_RENAME[self::CE_TYPE_COLSET_END]);
+        $stmt->bindValue('customTplPart', isset($parts[0]) ? $parts[0]->getCustomTpl() ?? '' : '');
+        $stmt->bindValue('customTplStop', $stop->getCustomTpl() ?? '');
 
         foreach ($childIds as $index => $childId) {
             $stmt->bindValue('child_' . $index, $childId, ParameterType::INTEGER);
@@ -551,7 +534,7 @@ class MigrateSubcolumnsCommand extends Command
             $id = $this->insertColSetDefinition($config, $colset);
 
             $colset->setMigratedId($id);
-            $this->mapMigratedGlobalSubcolumnDefinitionsToId[$colset->getIdentifier()] = $id;
+            $this->mapMigratedGlobalSubcolumnDefinitionsToBsGridId[$colset->getIdentifier()] = $id;
 
             $newlyMigrated[] = $colset->getIdentifier();
         }
@@ -579,7 +562,7 @@ class MigrateSubcolumnsCommand extends Command
                 : null;
             if (!$identifier) continue;
             $migrated[] = $identifier;
-            $this->mapMigratedGlobalSubcolumnDefinitionsToId[$identifier] = (int) $row['id'];
+            $this->mapMigratedGlobalSubcolumnDefinitionsToBsGridId[$identifier] = (int) $row['id'];
         }
 
         return $migrated;
@@ -636,12 +619,13 @@ class MigrateSubcolumnsCommand extends Command
     protected function fetchDBSetDefinitions(): ?array
     {
         # todo: maybe we don't have to fetch the sources but can directly execute database operations?
+        return null;
     }
 
     /**
      * @return array<ColSetDefinition>
      */
-    protected function fetchGlobalSetDefinitions(): array
+    protected function fetchGlobalSetDefinitions(MigrationConfig $config): array
     {
         if (empty($GLOBALS['TL_SUBCL']) || !is_array($GLOBALS['TL_SUBCL'])) {
             throw new \OutOfBoundsException('No subcolumns found in $GLOBALS["TL_SUBCL"].');
@@ -685,17 +669,18 @@ class MigrateSubcolumnsCommand extends Command
                     ->setSizeDefinitions($sizes)
                     ->setRowClasses($rowClasses)
                     ->setInsideClass($inside ? 'inside' : null)
+                    ->setUseInside((bool) $inside)
                 ;
 
                 if ($colset->getRowClasses() !== $rowClasses) {
-                    $this->io->note(
-                        "Row classes truncated for \"$identifier\" due to length limitations.\n".
-                        "Should be: \"$rowClasses\"\n" .
-                        "   Is now: \"" . $colset->getRowClasses() . "\""
+                    $config->addNote(
+                        "Row classes truncated for \"$identifier\" due to length limitations.\n"
+                        . "Should be: \"$rowClasses\"\n"
+                        . "   Is now: \"" . $colset->getRowClasses() . "\""
                     );
                 }
 
-                $colsetDefinitions[] = $colset;
+                $colsetDefinitions[$identifier] = $colset;
             }
         }
 
@@ -853,6 +838,214 @@ class MigrateSubcolumnsCommand extends Command
         }
     }
 
+    //<editor-fold desc="Tamplate handling">
+
+    /**
+     * Copies the templates from this bundle's contao/templates to the project directory.
+     * @param array<ColSetDefinition> $colSets
+     * @return array The prepared files.
+     */
+    protected function prepareTemplates(array $colSets): array
+    {
+        $source = $this->getBundlePath() . '/contao/templates';
+        $target = $this->parameterBag->get('kernel.project_dir') . '/contao/templates/elements';
+
+        if (!is_dir($target))
+        {
+            mkdir($target, 0777, true);
+        }
+
+        $insideClasses = [];
+
+        foreach ($colSets as $colSet)
+        {
+            if ($colSet->getInsideClass())
+            {
+                $insideClasses[] = $colSet->getInsideClass();
+            }
+        }
+
+        $copied = [];
+        foreach (\array_unique($insideClasses) as $insideClass)
+        {
+            $copied = \array_merge($copied, $this->copyTemplates($source, $target, 'inner', ['{insideClass}' => $insideClass]));
+        }
+
+        return $copied;
+    }
+
+    /**
+     * @param string $source The source directory.
+     * @param string $target The target directory.
+     * @param string $suffix The suffix included in the file name.
+     * @param array $replace The keys to replace in the template content and source file name.
+     * @return array The copied files.
+     */
+    protected function copyTemplates(string $source, string $target, string $suffix = '', array $replace = []): array
+    {
+        if (!\is_dir($source)) {
+            throw new \RuntimeException('Template source directory not found. Please reinstall the bundle.');
+        }
+
+        if (!\is_dir($target)) {
+            throw new \RuntimeException('Template target directory not found.');
+        }
+
+        if ($suffix && \substr($suffix, 0, 1) !== '_') {
+            $suffix = '_' . $suffix;
+        }
+
+        $rx = "/ce_bs_gridS(tart|eparator|top)$suffix(_[a-zA-Z0-9{}_]+)/";
+
+        $search = \array_keys($replace);
+        $replace = \array_values($replace);
+
+        $copied = [];
+
+        foreach (\scandir($source) as $file)
+        {
+            if ($file === '.' || $file === '..') continue;
+            if (!\preg_match($rx, $file)) continue;
+
+            $destination = $target . \DIRECTORY_SEPARATOR . \str_replace($search, $replace, $file);
+            if (\file_exists($destination)) continue;
+
+            $sourceFile = $source . \DIRECTORY_SEPARATOR . $file;
+
+            if ($this->copyTemplateFile($sourceFile, $destination, $file, $search, $replace) === false)
+            {
+                throw new \RuntimeException('Could not copy template file.');
+            }
+
+            $copied[] = $destination;
+        }
+
+        return $copied;
+    }
+
+    /**
+     * @param string $source The source file path.
+     * @param string $target The target file path.
+     * @param string $cacheKey The cache key for the template content.
+     * @param array $search The keys to replace in the template content.
+     * @param array $replace The values to replace the keys with.
+     * @return false|int The number of bytes written to the file, or false on failure.
+     */
+    protected function copyTemplateFile(
+        string $source,
+        string $target,
+        string $cacheKey,
+        array  $search,
+        array  $replace
+    ) {
+        if (\in_array($cacheKey, \array_keys($this->templateCache), true))
+        {
+            $content = $this->templateCache[$cacheKey];
+        }
+        else
+        {
+            $content = \file_get_contents($source);
+            $this->templateCache[$cacheKey] = $content;
+        }
+
+        return \file_put_contents($target, \str_replace($search, $replace, $content));
+    }
+
+    //</editor-fold>
+
+    /**
+     * @throws DBALException
+     */
+    protected function autoConfig(InputInterface $input): MigrationConfig
+    {
+        $config = new MigrationConfig();
+
+        $from = $this->smartGetFrom($input);
+        $config->setFrom($from);
+
+        switch ($from)
+        {
+            case MigrationConfig::FROM_SUBCOLUMNS_MODULE:
+                $config->addSource(MigrationConfig::SOURCE_GLOBALS);
+                break;
+
+            case MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE:
+
+                throw new \InvalidArgumentException('Migrating from the SubColumnsBootstrapBundle is not supported yet.');
+
+                // $config->addFetch(MigrationConfig::FETCH_DB);
+                //
+                // if (\class_exists(ModuleSubcolumns::class)) {
+                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
+                //     break;
+                // }
+                //
+                // $stmt = $this->connection->prepare(<<<'SQL'
+                //     SELECT id FROM tl_content WHERE type IN :types AND sc_columnset LIKE "globals.%" LIMIT 1
+                // SQL);
+                // $stmt->bindValue('types', static::CE_TYPES);
+                //
+                // $res = $stmt->executeQuery();
+                // if ($res->rowCount() > 0) {
+                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
+                // }
+                //
+                // break;
+        }
+
+        return $config;
+    }
+
+    //<editor-fold desc="Option 'from'">
+
+    /**
+     * @throws DBALException
+     */
+    protected function smartGetFrom(InputInterface $input): int
+    {
+        return $this->getFrom($input) ?? $this->autoDetectFrom();
+    }
+
+    protected function getFrom(InputInterface $input): ?int
+    {
+        $from = ($from = $input->getOption('from')) ? \ltrim($from, ' :=') : null;
+
+        switch ($from) {
+            case null: return null;
+            case 'm': return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
+            case 'b': return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
+            default: throw new \InvalidArgumentException('Invalid source.');
+        }
+    }
+
+    /**
+     * @throws DBALException
+     */
+    protected function autoDetectFrom(): ?int
+    {
+        if (class_exists( SubColumnsBootstrapBundle::class)) {
+            return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
+        }
+
+        if (class_exists(ModuleSubcolumns::class)) {
+            return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
+        }
+
+        $table = $this->connection
+            ->prepare('SHOW TABLES LIKE "tl_columnset"')
+            ->executeQuery()
+            ->fetchOne();
+
+        if ($table === 'tl_columnset')
+        {
+            return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
+        }
+
+        return null;
+    }
+
+    //</editor-fold>
+
     //<editor-fold desc="Grid version configuration">
 
     /**
@@ -951,99 +1144,6 @@ class MigrateSubcolumnsCommand extends Command
         ]);
         $layout->save();
         return $layout->id;
-    }
-
-    //</editor-fold>
-
-    /**
-     * @throws DBALException
-     */
-    protected function autoConfig(InputInterface $input): MigrationConfig
-    {
-        $config = new MigrationConfig();
-
-        $from = $this->smartGetFrom($input);
-        $config->setFrom($from);
-
-        switch ($from)
-        {
-            case MigrationConfig::FROM_SUBCOLUMNS_MODULE:
-                $config->addSource(MigrationConfig::SOURCE_GLOBALS);
-                break;
-
-            case MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE:
-
-                throw new \InvalidArgumentException('Migrating from the SubColumnsBootstrapBundle is not supported yet.');
-
-                // $config->addFetch(MigrationConfig::FETCH_DB);
-                //
-                // if (\class_exists(ModuleSubcolumns::class)) {
-                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
-                //     break;
-                // }
-                //
-                // $stmt = $this->connection->prepare(<<<'SQL'
-                //     SELECT id FROM tl_content WHERE type IN :types AND sc_columnset LIKE "globals.%" LIMIT 1
-                // SQL);
-                // $stmt->bindValue('types', static::CE_TYPES);
-                //
-                // $res = $stmt->executeQuery();
-                // if ($res->rowCount() > 0) {
-                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
-                // }
-
-                break;
-        }
-
-        return $config;
-    }
-
-    //<editor-fold desc="Option 'from'">
-
-    /**
-     * @throws DBALException
-     */
-    protected function smartGetFrom(InputInterface $input): int
-    {
-        return $this->getFrom($input) ?? $this->autoDetectFrom();
-    }
-
-    protected function getFrom(InputInterface $input): ?int
-    {
-        $from = ($from = $input->getOption('from')) ? \ltrim($from, ' :=') : null;
-
-        switch ($from) {
-            case null: return null;
-            case 'm': return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
-            case 'b': return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
-            default: throw new \InvalidArgumentException('Invalid source.');
-        }
-    }
-
-    /**
-     * @throws DBALException
-     */
-    protected function autoDetectFrom(): ?int
-    {
-        if (class_exists( SubColumnsBootstrapBundle::class)) {
-            return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
-        }
-
-        if (class_exists(ModuleSubcolumns::class)) {
-            return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
-        }
-
-        $table = $this->connection
-            ->prepare('SHOW TABLES LIKE "tl_columnset"')
-            ->executeQuery()
-            ->fetchOne();
-
-        if ($table === 'tl_columnset')
-        {
-            return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
-        }
-
-        return null;
     }
 
     //</editor-fold>
