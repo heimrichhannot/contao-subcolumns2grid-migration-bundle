@@ -246,37 +246,12 @@ class MigrateSubcolumnsCommand extends Command
             $io->text('Migrating module content elements.');
             $this->transformModuleContentElements($config);
 
-            $io->text('Updating content element templates.');
-            $this->updateContentElementTemplates($config);
-
             $io->success('Migrated module content elements successfully.');
         }
         else
         {
             $io->info('No module content elements found.');
         }
-    }
-
-    protected function updateContentElementTemplates(MigrationConfig $config): void
-    {
-        // foreach ($config->getGlobalSubcolumnDefinitions() as $colset)
-        // {
-        //     // $colset->
-        // }
-        //
-        // $stmt = $this->connection->prepare(<<<'SQL'
-        //     UPDATE tl_content
-        //        SET customTpl = CASE
-        //                WHEN customTpl != '' THEN customTpl
-        //                WHEN type = "start" THEN :customTplStart
-        //                WHEN type = "seperator" THEN :customTplSeperator
-        //                WHEN type = "stop" THEN :customTplStop
-        //                ELSE ''
-        //            END
-        //      WHERE type IN (:types)
-        // SQL);
-        //
-        // $stmt->executeStatement();
     }
 
     /**
