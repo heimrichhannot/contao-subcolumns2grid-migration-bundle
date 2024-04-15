@@ -1,0 +1,3 @@
+<div<?= $this->cssID; ?> class="<?= $this->class ?> <?= $this->rowClasses ?>">
+    <div class="<?= $this->columnClasses ?>">
+        <div class="{insideClass}">

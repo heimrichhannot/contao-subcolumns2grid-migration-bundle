@@ -18,49 +18,14 @@ class MigrationConfig
         self::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE,
     ];
 
-    protected array $definitions = [];
     /** @var int[] */
     protected array $sources = [];
     protected ?int $from = null;
-
-    public function getDefinitions(): array
-    {
-        return $this->definitions;
-    }
-
-    /** @param ColSetDefinition[] $definitions */
-    public function setDefinitions(array $definitions): self
-    {
-        $this->definitions = $definitions;
-        return $this;
-    }
-
-    public function removeDefinitions(array $definitions): self
-    {
-        $this->definitions = [];
-        return $this;
-    }
-
-    public function addDefinition(ColSetDefinition ...$definitions): self
-    {
-        foreach ($definitions as $definition) {
-            if (in_array($definition, $this->definitions)) {
-                continue;
-            }
-            $this->definitions[] = $definition;
-        }
-        return $this;
-    }
-
-    public function removeDefinition(array $definition): self
-    {
-        $key = array_search($definition, $this->definitions);
-        if ($key !== false)
-        {
-            unset($this->definitions[$key]);
-        }
-        return $this;
-    }
+    protected int $gridVersion;
+    protected int $parentThemeId;
+    /** @var ColSetDefinition[] */
+    protected array $globalSubcolumnDefinitions = [];
+    protected array $migratedIdentifiers = [];
 
     public function getSources(): array
     {
@@ -102,6 +67,58 @@ class MigrationConfig
     {
         $this->checkArgument($from, self::FROM, 'from');
         $this->from = $from;
+        return $this;
+    }
+
+    public function getGridVersion(): ?int
+    {
+        return $this->gridVersion ?? null;
+    }
+
+    public function setGridVersion(int $gridVersion): self
+    {
+        if (!\in_array($gridVersion, [2, 3]))
+        {
+            throw new \InvalidArgumentException('Invalid grid version.');
+        }
+        $this->gridVersion = $gridVersion;
+        return $this;
+    }
+
+    public function getParentThemeId(): ?int
+    {
+        return $this->parentThemeId ?? null;
+    }
+
+    public function setParentThemeId(int $parentThemeId): self
+    {
+        $this->parentThemeId = $parentThemeId;
+        return $this;
+    }
+
+    public function getGlobalSubcolumnDefinitions(): array
+    {
+        return $this->globalSubcolumnDefinitions;
+    }
+
+    /**
+     * @param array<ColSetDefinition> $globalSubcolumns
+     * @return $this
+     */
+    public function setGlobalSubcolumnDefinitions(array $globalSubcolumns): self
+    {
+        $this->globalSubcolumnDefinitions = $globalSubcolumns;
+        return $this;
+    }
+
+    public function getMigratedIdentifiers(): array
+    {
+        return $this->migratedIdentifiers;
+    }
+
+    public function setMigratedIdentifiers(array $migratedIdentifiers): self
+    {
+        $this->migratedIdentifiers = $migratedIdentifiers;
         return $this;
     }
 
