@@ -16,7 +16,7 @@ use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Result;
 use FelixPfeiffer\Subcolumns\ModuleSubcolumns;
 use HeimrichHannot\Subcolumns2Grid\Config\ClassName;
-use HeimrichHannot\Subcolumns2Grid\Config\ColSetDefinition;
+use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
@@ -245,7 +245,7 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $config->setGlobalSubcolumnDefinitions($globalSubcolumns);
-        $io->listing(\array_map(static function (ColSetDefinition $colset) {
+        $io->listing(\array_map(static function (ColsetDefinition $colset) {
             return $colset->getIdentifier();
         }, $globalSubcolumns));
         $io->info(\sprintf('Evaluated %s globally defined sub-column sets.', \count($globalSubcolumns)));
@@ -323,18 +323,19 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
+     * @return array<int, ColsetElementDTO[]> A map of parent IDs to their respective colset element data transfer
+     *   objects, that may either represent content elements or form fields.
      * @throws DBALException
      */
-    protected function dbResult2contentElementDTOs(
+    protected function dbResult2colsetElementDTOs(
         MigrationConfig $config,
         Result          $rows,
         ?array          $columnsMap = null,
         ?string         $table = null
-    ): array
-    {
+    ): array {
         $currentProfile = $config->getProfile();
 
-        /** @var array<string, ColsetElementDTO[]> $contentElements */
+        /** @var array<int, ColsetElementDTO[]> $contentElements */
         $contentElements = [];
 
         while ($row = $rows->fetchAssociative())
@@ -369,18 +370,15 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function checkIfModuleContentElementsExist(): bool
     {
-        if (!$this->dbColumnExists('tl_content', 'sc_columnset'))
-            // sc_columnset does not exist in tl_content,
-            // therefore we can assume that only module content elements exist
-        {
-            return true;
-        }
+        $sqlColsetEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
+            ? 'AND sc_columnset = ""'
+            : '';
 
-        $stmt = $this->connection->prepare(<<<'SQL'
+        $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(id)
               FROM tl_content
              WHERE type LIKE "colset%"
-               AND sc_columnset = ""
+               $sqlColsetEmpty
                AND sc_type != ""
              LIMIT 1
         SQL);
@@ -398,25 +396,22 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function checkIfModuleFormFieldsExist(): bool
     {
-        if (!$this->dbColumnExists('tl_form_field', 'sc_columnset'))
-            // sc_columnset does not exist in tl_form_field,
-            // therefore we can assume that only module form fields exist
-        {
-            return true;
-        }
+        $sqlColsetEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
+            ? 'AND sc_columnset = ""'
+            : '';
 
-        $stmt = $this->connection->prepare(<<<'SQL'
+        $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(id)
               FROM tl_form_field
              WHERE type LIKE "formcol%"
-               AND sc_columnset = ""
+               $sqlColsetEmpty
                AND fsc_type != ""
              LIMIT 1
         SQL);
 
         $result = $stmt->executeQuery();
 
-        // if there are colset elements with a sc_type but no sc_columnset,
+        // if there are colset elements with a fsc_type but no sc_columnset,
         // they have to be module form fields
         return (int)$result->fetchOne() > 0;
     }
@@ -438,7 +433,7 @@ class MigrateSubcolumnsCommand extends Command
         SQL);
         $result = $stmt->executeQuery();
 
-        $contentElements = $this->dbResult2contentElementDTOs($config, $result);
+        $contentElements = $this->dbResult2colsetElementDTOs($config, $result);
 
         $this->transformColsetElements($contentElements);
     }
@@ -460,7 +455,7 @@ class MigrateSubcolumnsCommand extends Command
         SQL);
         $result = $stmt->executeQuery();
 
-        $formFields = $this->dbResult2contentElementDTOs($config, $result, [
+        $formFields = $this->dbResult2colsetElementDTOs($config, $result, [
             'scChildren' => 'fsc_childs',
             'scParent'   => 'fsc_parent',
             'scType'     => 'fsc_type',
@@ -471,6 +466,7 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
+     * @param array<int, ColsetElementDTO[]> $colsetElements
      * @throws DBALException|Throwable
      */
     protected function transformColsetElements(array $colsetElements): void
@@ -681,7 +677,7 @@ class MigrateSubcolumnsCommand extends Command
     /**
      * @throws DBALException
      */
-    protected function insertColSetDefinition(MigrationConfig $config, ColSetDefinition $colset): int
+    protected function insertColSetDefinition(MigrationConfig $config, ColsetDefinition $colset): int
     {
         $breakpointOrder = \array_flip(self::BREAKPOINTS);
 
@@ -710,7 +706,7 @@ class MigrateSubcolumnsCommand extends Command
         SQL);
 
         $stmt->bindValue('pid', $config->getParentThemeId());
-        $stmt->bindValue('tstamp', time());
+        $stmt->bindValue('tstamp', \time());
         $stmt->bindValue('title', $colset->getTitle());
         $stmt->bindValue('description', \sprintf('[sub2col:%s]', $colset->getIdentifier()));
         $stmt->bindValue('sizes', \serialize($sizes));
@@ -733,11 +729,11 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @return array<ColSetDefinition>
+     * @return array<ColsetDefinition>
      */
     protected function fetchGlobalSetDefinitions(MigrationConfig $config): array
     {
-        if (empty($GLOBALS['TL_SUBCL']) || !is_array($GLOBALS['TL_SUBCL'])) {
+        if (empty($GLOBALS['TL_SUBCL']) || !\is_array($GLOBALS['TL_SUBCL'])) {
             throw new \OutOfBoundsException('No subcolumns found in $GLOBALS["TL_SUBCL"].');
         }
 
@@ -745,7 +741,7 @@ class MigrateSubcolumnsCommand extends Command
 
         foreach ($GLOBALS['TL_SUBCL'] as $profileName => $profile)
         {
-            if (!is_array($profile)
+            if (!\is_array($profile)
                 || \strpos($profileName, 'yaml') !== false
                 || empty($profile['sets']))
             {
@@ -772,7 +768,7 @@ class MigrateSubcolumnsCommand extends Command
                 $maxColCount = \max(\array_map('count', $sizes) ?: [0]);
                 $rowClasses = "colcount_$maxColCount $idSource col-$setName sc-type-$setName";
 
-                $colset = ColSetDefinition::create()
+                $colset = ColsetDefinition::create()
                     ->setIdentifier($identifier)
                     ->setTitle("$label: $setName [global]")
                     ->setPublished(true)
@@ -952,7 +948,8 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * Copies the templates from this bundle's contao/templates to the project directory.
-     * @param array<ColSetDefinition> $colSets
+     *
+     * @param array<ColsetDefinition> $colSets
      * @return array The prepared files.
      */
     protected function prepareTemplates(array $colSets): array
@@ -1205,12 +1202,16 @@ class MigrateSubcolumnsCommand extends Command
 
         if (!$gridVersion) {
             $version = ContaoCoreBundle::getVersion();
+            $phpVers = \phpversion();
             $isContao5 = \version_compare($version, '5', '>=');
             if ($isContao5) {
-                $io->text("Detected Contao version $version. Necessarily migrating to contao-bootstrap/grid version 3.");
+                $io->block([
+                    "Detected Contao version $version on PHP $phpVers.",
+                    "Necessarily migrating to contao-bootstrap/grid version 3."
+                ]);
                 $gridVersion = 3;
             } else {
-                $io->text("Detected Contao version $version.");
+                $io->text("Detected Contao version $version on PHP $phpVers.");
                 $gridVersion = self::askForGridVersion($io);
             }
         }

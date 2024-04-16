@@ -24,7 +24,7 @@ class MigrationConfig
     protected ?string $profile = null;
     protected int $gridVersion;
     protected int $parentThemeId;
-    /** @var array<string, ColSetDefinition> */
+    /** @var array<string, ColsetDefinition> */
     protected array $globalSubcolumnDefinitions = [];
     protected array $migratedIdentifiers = [];
     /** @var string[] $notes */
@@ -127,14 +127,14 @@ class MigrationConfig
         return $this->globalSubcolumnDefinitions;
     }
 
-    public function getSubcolumnDefinition(string $identifier): ?ColSetDefinition
+    public function getSubcolumnDefinition(string $identifier): ?ColsetDefinition
     {
         # todo: extend with db sets
         return $this->globalSubcolumnDefinitions[$identifier] ?? null;
     }
 
     /**
-     * @param array<string, ColSetDefinition> $globalSubcolumns
+     * @param array<string, ColsetDefinition> $globalSubcolumns
      * @return $this
      */
     public function setGlobalSubcolumnDefinitions(array $globalSubcolumns): self

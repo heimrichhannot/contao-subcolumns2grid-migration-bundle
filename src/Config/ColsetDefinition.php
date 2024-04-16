@@ -4,7 +4,7 @@ namespace HeimrichHannot\Subcolumns2Grid\Config;
 
 use Exception;
 
-class ColSetDefinition implements \Countable
+class ColsetDefinition implements \Countable
 {
     protected ?int $count;
     protected ?string $identifier;
@@ -100,7 +100,7 @@ class ColSetDefinition implements \Countable
 
     public function getSizes(): array
     {
-        return array_keys($this->sizeDefinitions);
+        return \array_keys($this->sizeDefinitions);
     }
 
     public function addSize(string $breakpoint, ColumnDefinition $size): self
@@ -122,11 +122,14 @@ class ColSetDefinition implements \Countable
     {
         foreach ($sizeDefinitions as $sizeWrapper) {
             if (!\is_array($sizeWrapper)) {
-                throw new \InvalidArgumentException('Invalid size definition.');
+                throw new \InvalidArgumentException(sprintf('Invalid size definition. Expected array, %s given.', \gettype($sizeWrapper)));
             }
             foreach ($sizeWrapper as $colNumber => $size) {
-                if (!\is_integer($colNumber) || !$size instanceof ColumnDefinition) {
-                    throw new \InvalidArgumentException('Invalid size definition.');
+                if (!\is_int($colNumber)) {
+                    throw new \InvalidArgumentException(sprintf('Invalid size definition. Key must be an integer, %s given.', gettype($colNumber)));
+                }
+                if (!$size instanceof ColumnDefinition) {
+                    throw new \InvalidArgumentException(sprintf('Invalid size definition. Value must be an instance of ColumnDefinition, %s given.', gettype($size)));
                 }
             }
         }
@@ -184,7 +187,7 @@ class ColSetDefinition implements \Countable
             \ksort($sizeWrapper, \SORT_NUMERIC);
             $firstKey = \array_key_first($sizeWrapper);
             if ($firstKey > 0) {
-                foreach (range($incrementIndices,  $firstKey + $incrementIndices - 1) as $index) {
+                foreach (\range($incrementIndices,  $firstKey + $incrementIndices - 1) as $index) {
                     $sizes[$breakpoint][$index] = ColumnDefinition::create()->asArray();
                 }
             }
