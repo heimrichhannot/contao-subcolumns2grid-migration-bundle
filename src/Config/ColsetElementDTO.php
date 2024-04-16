@@ -2,7 +2,7 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Config;
 
-class ContentElementDTO
+class ColsetElementDTO
 {
     /**
      * @var string[]
@@ -36,7 +36,7 @@ class ContentElementDTO
         return $this->id;
     }
 
-    public function setId(int $id): ContentElementDTO
+    public function setId(int $id): ColsetElementDTO
     {
         $this->id = $id;
         return $this;
@@ -47,7 +47,7 @@ class ContentElementDTO
         return $this->type;
     }
 
-    public function setType(string $type): ContentElementDTO
+    public function setType(string $type): ColsetElementDTO
     {
         $this->type = $type;
         return $this;
@@ -58,7 +58,7 @@ class ContentElementDTO
         return $this->scChildren;
     }
 
-    public function setScChildren(string $scChildren): ContentElementDTO
+    public function setScChildren(string $scChildren): ColsetElementDTO
     {
         $this->scChildren = $scChildren;
         return $this;
@@ -69,7 +69,7 @@ class ContentElementDTO
         return $this->scParent;
     }
 
-    public function setScParent(int $scParent): ContentElementDTO
+    public function setScParent(int $scParent): ColsetElementDTO
     {
         $this->scParent = $scParent;
         return $this;
@@ -80,7 +80,7 @@ class ContentElementDTO
         return $this->scType;
     }
 
-    public function setScType(string $scType): ContentElementDTO
+    public function setScType(string $scType): ColsetElementDTO
     {
         $this->scType = $scType;
         return $this;
@@ -91,7 +91,7 @@ class ContentElementDTO
         return $this->scName;
     }
 
-    public function setScName(string $scName): ContentElementDTO
+    public function setScName(string $scName): ColsetElementDTO
     {
         $this->scName = $scName;
         return $this;
@@ -102,7 +102,7 @@ class ContentElementDTO
         return $this->identifier;
     }
 
-    public function setIdentifier(string $identifier): ContentElementDTO
+    public function setIdentifier(string $identifier): ColsetElementDTO
     {
         $this->identifier = $identifier;
         return $this;
@@ -113,7 +113,7 @@ class ContentElementDTO
         return $this->customTpl;
     }
 
-    public function setCustomTpl(string $customTpl): ContentElementDTO
+    public function setCustomTpl(string $customTpl): ColsetElementDTO
     {
         $this->customTpl = $customTpl;
         return $this;

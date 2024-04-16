@@ -19,7 +19,7 @@ use HeimrichHannot\Subcolumns2Grid\Config\ClassName;
 use HeimrichHannot\Subcolumns2Grid\Config\ColSetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
-use HeimrichHannot\Subcolumns2Grid\Config\ContentElementDTO;
+use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\HeimrichHannotSubcolumns2GridMigrationBundle;
 use HeimrichHannot\SubColumnsBootstrapBundle\SubColumnsBootstrapBundle;
 use Symfony\Component\Console\Command\Command;
@@ -334,12 +334,12 @@ class MigrateSubcolumnsCommand extends Command
     {
         $currentProfile = $config->getProfile();
 
-        /** @var array<string, ContentElementDTO[]> $contentElements */
+        /** @var array<string, ColsetElementDTO[]> $contentElements */
         $contentElements = [];
 
         while ($row = $rows->fetchAssociative())
         {
-            $ce = ContentElementDTO::fromRow($row, $columnsMap);
+            $ce = ColsetElementDTO::fromRow($row, $columnsMap);
             if ($table !== null) {
                 $ce->setTable($table);
             }
@@ -440,7 +440,7 @@ class MigrateSubcolumnsCommand extends Command
 
         $contentElements = $this->dbResult2contentElementDTOs($config, $result);
 
-        $this->transformContentElements($contentElements);
+        $this->transformColsetElements($contentElements);
     }
 
     /**
@@ -460,27 +460,27 @@ class MigrateSubcolumnsCommand extends Command
         SQL);
         $result = $stmt->executeQuery();
 
-        $contentElements = $this->dbResult2contentElementDTOs($config, $result, [
+        $formFields = $this->dbResult2contentElementDTOs($config, $result, [
             'scChildren' => 'fsc_childs',
             'scParent'   => 'fsc_parent',
             'scType'     => 'fsc_type',
             'scName'     => 'fsc_name',
         ], 'tl_form_field');
 
-        $this->transformContentElements($contentElements);
+        $this->transformColsetElements($formFields);
     }
 
     /**
      * @throws DBALException|Throwable
      */
-    protected function transformContentElements(array $contentElements): void
+    protected function transformColsetElements(array $colsetElements): void
     {
         $this->connection->beginTransaction();
 
         try {
-            foreach ($contentElements as $parentId => $ceDTOs)
+            foreach ($colsetElements as $parentId => $ceDTOs)
             {
-                $this->transformSubcolumnSetIntoGrid($parentId, $ceDTOs);
+                $this->transformColsetIntoGrid($parentId, $ceDTOs);
             }
         } catch (\Throwable $e) {
             $this->connection->rollBack();
@@ -492,10 +492,10 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @param int $parentId
-     * @param ContentElementDTO[] $ceDTOs
+     * @param ColsetElementDTO[] $ceDTOs
      * @throws DBALException|\DomainException
      */
-    protected function transformSubcolumnSetIntoGrid(int $parentId, array $ceDTOs): void
+    protected function transformColsetIntoGrid(int $parentId, array $ceDTOs): void
     {
         $errMsg = " Please check manually and re-run the migration.\n"
             . "(SELECT * FROM tl_content WHERE sc_parent=\"$parentId\" AND type LIKE \"colset%\" OR type LIKE \"formcol%\";)";
@@ -578,7 +578,7 @@ class MigrateSubcolumnsCommand extends Command
          * Transform the child elements into grid columns and end. *
         \* ======================================================= */
 
-        $childIds = \array_filter(\array_map(static function (ContentElementDTO $row) use ($start) {
+        $childIds = \array_filter(\array_map(static function (ColsetElementDTO $row) use ($start) {
             $rowId = $row->getId();
             return $rowId !== $start->getId() ? $rowId : null;
         }, $ceDTOs));
