@@ -48,8 +48,8 @@ vendor/bin/contao-console sub2grid:migrate --help
 
 After the migration, you should check the affected pages and modules for any issues.
 
-- The migration will migrate global subcolumn profile definitions from your `config.php`
-  to grid definitions of any template you choose or of a new template.
+- The migration will migrate global subcolumn set definitions from your `config.php`
+  to grid definitions of any template you choose or of a new theme.
 - The migration will migrate database-defined subcolumn definitions to grid definitions of any template you choose or
   of a new template.
 - The migration will transform subcolumn content elements to grid content elements.
