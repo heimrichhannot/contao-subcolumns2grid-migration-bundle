@@ -13,6 +13,7 @@ use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\ParameterType;
+use Doctrine\DBAL\Result;
 use FelixPfeiffer\Subcolumns\ModuleSubcolumns;
 use HeimrichHannot\Subcolumns2Grid\Config\ClassName;
 use HeimrichHannot\Subcolumns2Grid\Config\ColSetDefinition;
@@ -36,20 +37,24 @@ class MigrateSubcolumnsCommand extends Command
     protected const CE_TYPE_COLSET_START = 'colsetStart';
     protected const CE_TYPE_COLSET_PART = 'colsetPart';
     protected const CE_TYPE_COLSET_END = 'colsetEnd';
-    protected const CE_TYPES = [
-        self::CE_TYPE_COLSET_START,
-        self::CE_TYPE_COLSET_PART,
-        self::CE_TYPE_COLSET_END,
+
+    protected const FF_TYPE_FORMCOL_START = 'formcolstart';
+    protected const FF_TYPE_FORMCOL_PART = 'formcolpart';
+    protected const FF_TYPE_FORMCOL_END = 'formcolend';
+    protected const BS_GRID_START_TYPE = 'bs_gridStart';
+    protected const BS_GRID_SEPARATOR_TYPE = 'bs_gridSeparator';
+    protected const BS_GRID_STOP_TYPE = 'bs_gridStop';
+    protected const RENAME_TYPE = [
+        self::CE_TYPE_COLSET_START  => self::BS_GRID_START_TYPE,
+        self::CE_TYPE_COLSET_PART   => self::BS_GRID_SEPARATOR_TYPE,
+        self::CE_TYPE_COLSET_END    => self::BS_GRID_STOP_TYPE,
+        self::FF_TYPE_FORMCOL_START => self::BS_GRID_START_TYPE,
+        self::FF_TYPE_FORMCOL_PART  => self::BS_GRID_SEPARATOR_TYPE,
+        self::FF_TYPE_FORMCOL_END   => self::BS_GRID_STOP_TYPE,
     ];
-    protected const CE_RENAME = [
-        'colsetStart' => 'bs_gridStart',
-        'colsetPart'  => 'bs_gridSeparator',
-        'colsetEnd'   => 'bs_gridStop',
-    ];
+
     protected const BREAKPOINTS = ['xs', 'sm', 'md', 'lg', 'xl', 'xxl'];
     protected const UNSPECIFIC_PLACEHOLDER = '#{._.}#';
-    protected const HTML_DIV_OPEN = '<div class="%s">';
-    protected const HTML_DIV_CLOSE = '</div>';
 
     protected Connection $connection;
     protected ContaoFramework $framework;
@@ -57,11 +62,9 @@ class MigrateSubcolumnsCommand extends Command
     protected ParameterBagInterface $parameterBag;
 
     protected array $mapMigratedGlobalSubcolumnIdentifiersToBsGridId = [];
-    protected array $mapMigratedGridIdToSubcolumnDefinitions = [];
-    protected array $mapMigratedDBSetsToId = [];
     protected bool $skipConfirmations = false;
-    protected SymfonyStyle $io;
     protected array $templateCache = [];
+    protected array $dbColumnsCache = [];
 
     public function __construct(
         Connection            $connection,
@@ -104,7 +107,14 @@ class MigrateSubcolumnsCommand extends Command
                 'g',
                 InputOption::VALUE_REQUIRED,
                 'The version of contao-bootstrap/grid to migrate to. Must be 2 or 3.'
-            );
+            )
+            ->addOption(
+                'profile',
+                'p',
+                InputOption::VALUE_REQUIRED,
+                'The profile to migrate. Must be the name of a profile in the SubColumns module.'
+            )
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -114,10 +124,10 @@ class MigrateSubcolumnsCommand extends Command
         $this->framework->initialize();
 
         $io = new SymfonyStyle($input, $output);
-        $this->io = $io;
+        $config = new MigrationConfig();
 
         try {
-            return $this->migrate($input, $io);
+            return $this->migrate($input, $io, $config);
         }
         catch (\Throwable $e)
         {
@@ -131,7 +141,7 @@ class MigrateSubcolumnsCommand extends Command
      * @throws Throwable
      * @throws DBALException
      */
-    protected function migrate(InputInterface $input, SymfonyStyle $io): int
+    protected function migrate(InputInterface $input, SymfonyStyle $io, MigrationConfig $config): int
     {
         $io->title('Migrating sub-columns to grid columns');
 
@@ -141,8 +151,14 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $io->text('Fetching migration sources and preparing migration.');
-        $config = new MigrationConfig();
         $this->autoConfig($input, $config);
+
+        if ($config->getProfile()) {
+            $io->info("The default profile is set to \"{$config->getProfile()}\".");
+        } else {
+            $io->error('No default profile specified. Please set one in your site\'s configuration or provide the --profile option.');
+            return Command::FAILURE;
+        }
 
         if ($config->getFrom()) {
             $io->info(
@@ -166,12 +182,12 @@ class MigrateSubcolumnsCommand extends Command
         $config->setParentThemeId(self::initParentThemeId($input, $io));
         $io->info("Assigning new grid columns to parent theme with ID {$config->getParentThemeId()}.");
 
-        $io->text('Fetching already migrated identifiers.');
+        $io->text('Fetching already migrated sub-column sets.');
         $migratedIdentifiers = $this->getMigratedIdentifiers($config->getParentThemeId());
         $config->setMigratedIdentifiers($migratedIdentifiers);
 
         if (!empty($migratedIdentifiers)) {
-            $io->text('Already migrated sub-column sets:');
+            $io->text("Already migrated sub-column identifiers on theme {$config->getParentThemeId()}:");
             $io->listing($migratedIdentifiers);
         }
         $io->info(\sprintf(
@@ -183,7 +199,16 @@ class MigrateSubcolumnsCommand extends Command
 
         if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
         {
-            $this->migrateGlobal($io, $config);
+            if (!$this->skipConfirmations &&
+                !$io->confirm("Migrate globally defined sub-column profiles now?"))
+            {
+                $io->info("Skipping migration of globally defined sub-column sets.");
+            }
+            else
+            {
+                $io->section('Migrating globally defined sub-column sets.');
+                $this->migrateGlobal($io, $config);
+            }
         }
 
         // if ($config->hasSource(MigrationConfig::SOURCE_DB))
@@ -211,8 +236,6 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function migrateGlobal(SymfonyStyle $io, MigrationConfig $config)
     {
-        $io->section('Migrating globally defined sub-column profiles');
-
         $io->text('Fetching definitions from globals.');
         $globalSubcolumns = $this->fetchGlobalSetDefinitions($config);
 
@@ -259,6 +282,81 @@ class MigrateSubcolumnsCommand extends Command
         {
             $io->info('No module content elements found.');
         }
+
+        $io->text('Checking for module form fields.');
+        if ($this->checkIfModuleFormFieldsExist())
+        {
+            $io->text('Migrating module form fields.');
+            $this->transformModuleFormFields($config);
+
+            $io->success('Migrated module form fields successfully.');
+        }
+        else
+        {
+            $io->info('No module form fields found.');
+        }
+    }
+
+    /**
+     * @throws DBALException
+     */
+    protected function dbColumnExists(string $table, string $column): bool
+    {
+        if (isset($this->dbColumnsCache[$table . "." . $column])) {
+            return $this->dbColumnsCache[$table . "." . $column];
+        }
+
+        $stmt = $this->connection->prepare(<<<SQL
+            SELECT COUNT(*)
+              FROM information_schema.COLUMNS
+             WHERE TABLE_NAME = :table
+               AND COLUMN_NAME = :column
+             LIMIT 1
+        SQL);
+
+        $stmt->bindValue('table', $table);
+        $stmt->bindValue('column', $column);
+
+        $result = $stmt->executeQuery();
+
+        return $this->dbColumnsCache[$table . "." . $column] = (int)$result->fetchOne() > 0;
+    }
+
+    /**
+     * @throws DBALException
+     */
+    protected function dbResult2contentElementDTOs(
+        MigrationConfig $config,
+        Result          $rows,
+        ?array          $columnsMap = null,
+        ?string         $table = null
+    ): array
+    {
+        $currentProfile = $config->getProfile();
+
+        /** @var array<string, ContentElementDTO[]> $contentElements */
+        $contentElements = [];
+
+        while ($row = $rows->fetchAssociative())
+        {
+            $ce = ContentElementDTO::fromRow($row, $columnsMap);
+            if ($table !== null) {
+                $ce->setTable($table);
+            }
+
+            $identifier = \sprintf('globals.%s.%s', $currentProfile, $ce->getScType());
+            $ce->setIdentifier($identifier);
+
+            if (!$ce->getCustomTpl())
+            {
+                $customTpl = $this->getColumnTemplateFromIdentifier($config, $identifier, $ce->getType());
+                $ce->setCustomTpl($customTpl ?? '');
+            }
+
+            $contentElements[$ce->getScParent()][] = $ce;
+        }
+
+        return $contentElements;
     }
 
     /**
@@ -271,17 +369,7 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function checkIfModuleContentElementsExist(): bool
     {
-        $stmt = $this->connection->prepare(<<<'SQL'
-            SELECT COUNT(*)
-              FROM information_schema.COLUMNS
-             WHERE TABLE_NAME = 'tl_content'
-               AND COLUMN_NAME = 'sc_columnset'
-             LIMIT 1
-        SQL);
-
-        $result = $stmt->executeQuery();
-
-        if ((int)$result->fetchOne() < 1)
+        if (!$this->dbColumnExists('tl_content', 'sc_columnset'))
             // sc_columnset does not exist in tl_content,
             // therefore we can assume that only module content elements exist
         {
@@ -304,24 +392,33 @@ class MigrateSubcolumnsCommand extends Command
         return (int)$result->fetchOne() > 0;
     }
 
-    protected function getColumnTemplateFromIdentifier(
-        MigrationConfig $config,
-        string          $identifier,
-        string          $ceType
-    ): ?string {
-        $def = $config->getSubcolumnDefinition($identifier);
-        if (!$def) {
-            throw new \DomainException("No sub-column definition found for identifier \"$identifier\".");
+    /**
+     * @see self::checkIfModuleContentElementsExist() but for form fields.
+     * @throws DBALException
+     */
+    protected function checkIfModuleFormFieldsExist(): bool
+    {
+        if (!$this->dbColumnExists('tl_form_field', 'sc_columnset'))
+            // sc_columnset does not exist in tl_form_field,
+            // therefore we can assume that only module form fields exist
+        {
+            return true;
         }
 
-        $insideClass = $def->getInsideClass();
-        if (!$def->getUseInside() || !$insideClass) {
-            return null;
-        }
+        $stmt = $this->connection->prepare(<<<'SQL'
+            SELECT COUNT(id)
+              FROM tl_form_field
+             WHERE type LIKE "formcol%"
+               AND sc_columnset = ""
+               AND fsc_type != ""
+             LIMIT 1
+        SQL);
 
-        $type = self::CE_RENAME[$ceType];
+        $result = $stmt->executeQuery();
 
-        return "ce_{$type}_inner_$insideClass";
+        // if there are colset elements with a sc_type but no sc_columnset,
+        // they have to be module form fields
+        return (int)$result->fetchOne() > 0;
     }
 
     /**
@@ -329,46 +426,46 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function transformModuleContentElements(MigrationConfig $config): void
     {
-        $currentProfile = Config::get('subcolumns');
+        $sqlScColumnsetEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
+            ? 'AND sc_columnset = ""'
+            : '';
 
-        if (empty($currentProfile)) {
-            throw new \DomainException('No subcolumns profile found in the configuration.');
-        }
-
-        if (\strpos($currentProfile, 'yaml') !== false) {
-            throw new \DomainException('YAML profiles are not supported. Please check your site configuration.');
-        }
-
-        if ($currentProfile === 'bootstrap') {
-            $currentProfile = 'bootstrap3';
-        }
-
-        $stmt = $this->connection->prepare(<<<'SQL'
+        $stmt = $this->connection->prepare(<<<SQL
             SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name
               FROM tl_content
              WHERE type LIKE "colset%"
-               AND sc_columnset = ""
+               $sqlScColumnsetEmpty
         SQL);
         $result = $stmt->executeQuery();
 
-        /** @var array<string, ContentElementDTO[]> $contentElements */
-        $contentElements = [];
+        $contentElements = $this->dbResult2contentElementDTOs($config, $result);
 
-        while ($row = $result->fetchAssociative())
-        {
-            $ce = ContentElementDTO::fromRow($row);
+        $this->transformContentElements($contentElements);
+    }
 
-            $identifier = \sprintf('globals.%s.%s', $currentProfile, $ce->getScType());
-            $ce->setIdentifier($identifier);
+    /**
+     * @throws DBALException|Throwable
+     */
+    protected function transformModuleFormFields(MigrationConfig $config): void
+    {
+        $sqlScColumnsetEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
+            ? 'AND sc_columnset = ""'
+            : '';
 
-            if (!$ce->getCustomTpl())
-            {
-                $customTpl = $this->getColumnTemplateFromIdentifier($config, $identifier, $ce->getType());
-                $ce->setCustomTpl($customTpl ?? '');
-            }
+        $stmt = $this->connection->prepare(<<<SQL
+            SELECT id, type, customTpl, fsc_childs, fsc_parent, fsc_type, fsc_name
+              FROM tl_form_field
+             WHERE type LIKE "formcol%"
+               $sqlScColumnsetEmpty
+        SQL);
+        $result = $stmt->executeQuery();
 
-            $contentElements[$ce->getScParent()][] = $ce;
-        }
+        $contentElements = $this->dbResult2contentElementDTOs($config, $result, [
+            'scChildren' => 'fsc_childs',
+            'scParent'   => 'fsc_parent',
+            'scType'     => 'fsc_type',
+            'scName'     => 'fsc_name',
+        ], 'tl_form_field');
 
         $this->transformContentElements($contentElements);
     }
@@ -400,8 +497,8 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function transformSubcolumnSetIntoGrid(int $parentId, array $ceDTOs): void
     {
-        $errMsg = " Please check manually and re-run the migration."
-            . " (SELECT * FROM tl_content WHERE sc_parent=\"$parentId\" AND type LIKE \"colset%\")";
+        $errMsg = " Please check manually and re-run the migration.\n"
+            . "(SELECT * FROM tl_content WHERE sc_parent=\"$parentId\" AND type LIKE \"colset%\" OR type LIKE \"formcol%\";)";
 
         if (empty($ceDTOs) || \count($ceDTOs) < 2) {
             throw new \DomainException("Not enough content elements found for colset to be valid." . $errMsg);
@@ -420,33 +517,46 @@ class MigrateSubcolumnsCommand extends Command
         foreach ($ceDTOs as $ce) {
             switch ($ce->getType()) {
                 case self::CE_TYPE_COLSET_START:
+                case self::FF_TYPE_FORMCOL_START:
                     if ($ce->getId() !== $parentId) {
                         throw new \DomainException(
                             "Start element's id does not match its sc_parent id ({$ce->getId()} !== $parentId)." . $errMsg
                         );
                     }
                     if ($start !== null) {
-                        throw new \DomainException('Multiple start elements found for subcolumn set.' . $errMsg);
+                        throw new \DomainException('Multiple start elements found for sub-column set.' . $errMsg);
                     }
                     $start = $ce;
                     break;
                 case self::CE_TYPE_COLSET_PART:
+                case self::FF_TYPE_FORMCOL_PART:
                     $parts[] = $ce;
                     break;
                 case self::CE_TYPE_COLSET_END:
+                case self::FF_TYPE_FORMCOL_END:
                     if ($stop !== null) {
-                        throw new \DomainException('Multiple stop elements found for subcolumn set.' . $errMsg);
+                        throw new \DomainException('Multiple stop elements found for sub-column set.' . $errMsg);
                     }
                     $stop = $ce;
                     break;
+                default:
+                    throw new \DomainException('Invalid content element type found for sub-column set.' . $errMsg);
             }
         }
 
         if (!$start) throw new \DomainException('No start element found for subcolumn set.' . $errMsg);
         if (!$stop)  throw new \DomainException('No stop element found for subcolumn set.' . $errMsg);
 
-        $stmt = $this->connection->prepare(<<<'SQL'
-            UPDATE tl_content
+        $part = $parts[0] ?? null;
+
+        $table = $start->getTable();
+
+        /* ============================================== *\
+         * Transform the start element into a grid start.
+        \* ============================================== */
+
+        $stmt = $this->connection->prepare(<<<SQL
+            UPDATE $table
                SET bs_grid_parent = :parentId,
                    bs_grid_name = :name,
                    bs_grid = :gridId,
@@ -458,11 +568,15 @@ class MigrateSubcolumnsCommand extends Command
         $stmt->bindValue('parentId', 0);
         $stmt->bindValue('name', $start->getScName());
         $stmt->bindValue('gridId', $gridId);
-        $stmt->bindValue('renameType', self::CE_RENAME[self::CE_TYPE_COLSET_START]);
+        $stmt->bindValue('renameType', self::RENAME_TYPE[$start->getType()]);
         $stmt->bindValue('customTpl', $start->getCustomTpl() ?? '');
         $stmt->bindValue('id', $start->getId());
 
         $stmt->executeStatement();
+
+        /* ======================================================= *\
+         * Transform the child elements into grid columns and end. *
+        \* ======================================================= */
 
         $childIds = \array_filter(\array_map(static function (ContentElementDTO $row) use ($start) {
             $rowId = $row->getId();
@@ -470,13 +584,16 @@ class MigrateSubcolumnsCommand extends Command
         }, $ceDTOs));
 
         $placeholders = [];
-        foreach ($childIds as $index => $childId) {
+        foreach ($childIds as $index => $childId)
+            // necessary for parameter binding,
+            // because DBAL does not allow mixing named and positional parameters
+        {
             $placeholders[] = ':child_' . $index;
         }
         $placeholders = \implode(', ', $placeholders);
 
         $stmt = $this->connection->prepare(<<<SQL
-            UPDATE tl_content
+            UPDATE $table
                SET bs_grid_parent = :parentId,
                    type = REPLACE(REPLACE(type, :oPart, :rPart), :oStop, :rStop),
                    customTpl = CASE 
@@ -486,15 +603,18 @@ class MigrateSubcolumnsCommand extends Command
                        ELSE ''
                    END
              WHERE id IN ($placeholders)
-               AND type LIKE "colset%"
+               AND (type LIKE "colset%" OR type LIKE "formcol%")
         SQL);
 
         $stmt->bindValue('parentId', $start->getId());
-        $stmt->bindValue('oPart', self::CE_TYPE_COLSET_PART);
-        $stmt->bindValue('rPart', self::CE_RENAME[self::CE_TYPE_COLSET_PART]);
-        $stmt->bindValue('oStop', self::CE_TYPE_COLSET_END);
-        $stmt->bindValue('rStop', self::CE_RENAME[self::CE_TYPE_COLSET_END]);
-        $stmt->bindValue('customTplPart', isset($parts[0]) ? $parts[0]->getCustomTpl() ?? '' : '');
+
+        $oPart = $part ? ($part->getType() ?? self::CE_TYPE_COLSET_PART) : self::CE_TYPE_COLSET_PART;
+        $stmt->bindValue('oPart', $oPart);
+        $stmt->bindValue('rPart', self::RENAME_TYPE[$oPart]);
+        $stmt->bindValue('customTplPart', $part ? ($part->getCustomTpl() ?? '') : '');
+
+        $stmt->bindValue('oStop', $stop->getType());
+        $stmt->bindValue('rStop', self::RENAME_TYPE[$stop->getType()]);
         $stmt->bindValue('customTplStop', $stop->getCustomTpl() ?? '');
 
         foreach ($childIds as $index => $childId) {
@@ -941,6 +1061,26 @@ class MigrateSubcolumnsCommand extends Command
         return \file_put_contents($target, \str_replace($search, $replace, $content));
     }
 
+    protected function getColumnTemplateFromIdentifier(
+        MigrationConfig $config,
+        string          $identifier,
+        string          $ceType
+    ): ?string {
+        $def = $config->getSubcolumnDefinition($identifier);
+        if (!$def) {
+            throw new \DomainException("No sub-column definition found for identifier \"$identifier\".");
+        }
+
+        $insideClass = $def->getInsideClass();
+        if (!$def->getUseInside() || !$insideClass) {
+            return null;
+        }
+
+        $type = self::RENAME_TYPE[$ceType];
+
+        return "ce_{$type}_inner_$insideClass";
+    }
+
     //</editor-fold>
 
     /**
@@ -980,19 +1120,27 @@ class MigrateSubcolumnsCommand extends Command
                 //
                 // break;
         }
+
+        $profile = $this->smartGetSubcolumnProfile($input);
+        $config->setProfile($profile);
     }
 
-    //<editor-fold desc="Option 'from'">
+    //<editor-fold desc="Options">
 
     /**
      * @throws DBALException
      */
-    protected function smartGetFrom(InputInterface $input): int
+    protected function smartGetFrom(InputInterface $input): ?int
     {
-        return $this->getFrom($input) ?? $this->autoDetectFrom();
+        return $this->getOptionFrom($input) ?? $this->autoDetectFrom();
     }
 
-    protected function getFrom(InputInterface $input): ?int
+    protected function smartGetSubcolumnProfile(InputInterface $input): ?string
+    {
+        return $this->getOptionProfile($input) ?? Config::get('subcolumns');
+    }
+
+    protected function getOptionFrom(InputInterface $input): ?int
     {
         $from = ($from = $input->getOption('from')) ? \ltrim($from, ' :=') : null;
 
@@ -1002,6 +1150,17 @@ class MigrateSubcolumnsCommand extends Command
             case 'b': return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
             default: throw new \InvalidArgumentException('Invalid source.');
         }
+    }
+
+    protected function getOptionProfile(InputInterface $input): ?string
+    {
+        $profile = ($profile = $input->getOption('profile')) ? \ltrim($profile, ' :=') : null;
+
+        if ($profile === null) {
+            return null;
+        }
+
+        return $profile;
     }
 
     /**
@@ -1126,7 +1285,7 @@ class MigrateSubcolumnsCommand extends Command
             'tstamp' => time(),
             'name' => 'Grids migrated from SubColumns',
             'author' => 'Subcolumns2Grid',
-            'vars' => \serialize([])
+            'vars' => \serialize([]),
         ]);
         $layout->save();
         return $layout->id;

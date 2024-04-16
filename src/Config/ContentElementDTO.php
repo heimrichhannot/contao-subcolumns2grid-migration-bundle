@@ -4,14 +4,32 @@ namespace HeimrichHannot\Subcolumns2Grid\Config;
 
 class ContentElementDTO
 {
+    /**
+     * @var string[]
+     * @internal Use the getter and setter methods to access the properties.
+     *   The map should not be used in userland code.
+     */
+    public const DEFAULT_COLUMNS_MAP = [
+        'id' => 'id',
+        'type' => 'type',
+        'customTpl' => 'customTpl',
+        'scChildren' => 'sc_childs',
+        'scParent' => 'sc_parent',
+        'scType' => 'sc_type',
+        'scName' => 'sc_name',
+        'scColumnset' => 'sc_columnset',
+    ];
+
     protected ?int $id;
     protected ?string $type;
-    protected ?string $sc_child;
-    protected ?int $sc_parent;
-    protected ?string $sc_type;
-    protected ?string $sc_name;
+    protected ?string $scChildren;
+    protected ?int $scParent;
+    protected ?string $scType;
+    protected ?string $scName;
     protected ?string $identifier;
     protected ?string $customTpl = null;
+    protected array $columnsMap = self::DEFAULT_COLUMNS_MAP;
+    protected string $table = 'tl_content';
 
     public function getId(): int
     {
@@ -35,47 +53,47 @@ class ContentElementDTO
         return $this;
     }
 
-    public function getScChild(): string
+    public function getScChildren(): string
     {
-        return $this->sc_child;
+        return $this->scChildren;
     }
 
-    public function setScChild(string $sc_child): ContentElementDTO
+    public function setScChildren(string $scChildren): ContentElementDTO
     {
-        $this->sc_child = $sc_child;
+        $this->scChildren = $scChildren;
         return $this;
     }
 
     public function getScParent(): int
     {
-        return $this->sc_parent;
+        return $this->scParent;
     }
 
-    public function setScParent(int $sc_parent): ContentElementDTO
+    public function setScParent(int $scParent): ContentElementDTO
     {
-        $this->sc_parent = $sc_parent;
+        $this->scParent = $scParent;
         return $this;
     }
 
     public function getScType(): string
     {
-        return $this->sc_type;
+        return $this->scType;
     }
 
-    public function setScType(string $sc_type): ContentElementDTO
+    public function setScType(string $scType): ContentElementDTO
     {
-        $this->sc_type = $sc_type;
+        $this->scType = $scType;
         return $this;
     }
 
     public function getScName(): string
     {
-        return $this->sc_name;
+        return $this->scName;
     }
 
-    public function setScName(string $sc_name): ContentElementDTO
+    public function setScName(string $scName): ContentElementDTO
     {
-        $this->sc_name = $sc_name;
+        $this->scName = $scName;
         return $this;
     }
 
@@ -101,21 +119,50 @@ class ContentElementDTO
         return $this;
     }
 
-    public function setRow(array $row): ContentElementDTO
+    public function getColumnsMap(): array
     {
-        $this->id = $row['id'] ?? $this->id ?? null;
-        $this->type = $row['type'] ?? $this->type ?? null;
-        $this->sc_child = $row['sc_child'] ?? $this->sc_child ?? null;
-        $this->sc_parent = $row['sc_parent'] ?? $this->sc_parent ?? null;
-        $this->sc_type = $row['sc_type'] ?? $this->sc_type ?? null;
-        $this->sc_name = $row['sc_name'] ?? $this->sc_name ?? null;
-        $this->identifier = $row['sc_columnset'] ?? $this->identifier ?? null;
-        $this->customTpl = $row['customTpl'] ?? $this->customTpl ?? null;
+        return $this->columnsMap;
+    }
+
+    public function updateColumnsMap(?array $columnsMap): self
+    {
+        if ($columnsMap !== null) {
+            $this->columnsMap = \array_merge($this->columnsMap, $columnsMap);
+        }
         return $this;
     }
 
-    public static function fromRow(array $row): self
+    public function getTable(): string
     {
-        return (new static())->setRow($row);
+        return $this->table;
+    }
+
+    public function setTable(string $table): self
+    {
+        $this->table = $table;
+        return $this;
+    }
+
+    public function getMappedValue(array $container, string $key): ?string
+    {
+        return $container[$this->columnsMap[$key]] ?? null;
+    }
+
+    public function setRow(array $row): self
+    {
+        $this->id = $this->getMappedValue($row, 'id') ?? $this->id ?? null;
+        $this->type = $this->getMappedValue($row, 'type') ?? $this->type ?? null;
+        $this->scChildren = $this->getMappedValue($row, 'scChildren') ?? $this->scChildren ?? null;
+        $this->scParent = $this->getMappedValue($row, 'scParent') ?? $this->scParent ?? null;
+        $this->scType = $this->getMappedValue($row, 'scType') ?? $this->scType ?? null;
+        $this->scName = $this->getMappedValue($row, 'scName') ?? $this->scName ?? null;
+        $this->identifier = $this->getMappedValue($row, 'scColumnset') ?? $this->identifier ?? null;
+        $this->customTpl = $this->getMappedValue($row, 'customTpl') ?? $this->customTpl ?? null;
+        return $this;
+    }
+
+    public static function fromRow(array $row, ?array $columnsMap = null): self
+    {
+        return (new self())->updateColumnsMap($columnsMap)->setRow($row);
     }
 }
