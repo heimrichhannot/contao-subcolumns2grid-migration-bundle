@@ -30,7 +30,6 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
-use Throwable;
 
 class MigrateSubcolumnsCommand extends Command
 {
@@ -138,7 +137,7 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws Throwable
+     * @throws \Throwable
      * @throws DBALException
      */
     protected function migrate(InputInterface $input, SymfonyStyle $io, MigrationConfig $config): int
@@ -231,7 +230,7 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws Throwable
+     * @throws \Throwable
      * @throws DBALException
      */
     protected function migrateGlobal(SymfonyStyle $io, MigrationConfig $config)
@@ -417,7 +416,7 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException|Throwable
+     * @throws DBALException|\Throwable
      */
     protected function transformModuleContentElements(MigrationConfig $config): void
     {
@@ -439,7 +438,7 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException|Throwable
+     * @throws DBALException|\Throwable
      */
     protected function transformModuleFormFields(MigrationConfig $config): void
     {
@@ -467,7 +466,7 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @param array<int, ColsetElementDTO[]> $colsetElements
-     * @throws DBALException|Throwable
+     * @throws DBALException|\Throwable
      */
     protected function transformColsetElements(array $colsetElements): void
     {
