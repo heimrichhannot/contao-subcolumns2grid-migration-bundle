@@ -56,7 +56,7 @@ class MigrateSubcolumnsCommand extends Command
     protected KernelInterface $kernel;
     protected ParameterBagInterface $parameterBag;
 
-    protected array $mapMigratedGlobalSubcolumnDefinitionsToBsGridId = [];
+    protected array $mapMigratedGlobalSubcolumnIdentifiersToBsGridId = [];
     protected array $mapMigratedGridIdToSubcolumnDefinitions = [];
     protected array $mapMigratedDBSetsToId = [];
     protected bool $skipConfirmations = false;
@@ -141,15 +141,18 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $io->text('Fetching migration sources and preparing migration.');
-        $config = $this->autoConfig($input);
+        $config = new MigrationConfig();
+        $this->autoConfig($input, $config);
 
-        if ($from = $config->getFrom()) {
+        if ($config->getFrom()) {
             $io->info(
                 sprintf('You are migrating from %s.',
-                    $from === MigrationConfig::FROM_SUBCOLUMNS_MODULE
+                    $config->getFrom() === MigrationConfig::FROM_SUBCOLUMNS_MODULE
                         ? 'the legacy SubColumns module'
                         : 'SubColumnsBootstrapBundle')
             );
+        } else {
+            $io->warning('No package to migrate from specified.');
         }
 
         if (!$config->hasAnySource()) {
@@ -166,7 +169,11 @@ class MigrateSubcolumnsCommand extends Command
         $io->text('Fetching already migrated identifiers.');
         $migratedIdentifiers = $this->getMigratedIdentifiers($config->getParentThemeId());
         $config->setMigratedIdentifiers($migratedIdentifiers);
-        $io->listing($migratedIdentifiers);
+
+        if (!empty($migratedIdentifiers)) {
+            $io->text('Already migrated sub-column sets:');
+            $io->listing($migratedIdentifiers);
+        }
         $io->info(\sprintf(
             'Found %s already migrated sub-column sets on theme %s%s.',
             $migratedIdentifiersCount = \count($migratedIdentifiers),
@@ -269,6 +276,7 @@ class MigrateSubcolumnsCommand extends Command
               FROM information_schema.COLUMNS
              WHERE TABLE_NAME = 'tl_content'
                AND COLUMN_NAME = 'sc_columnset'
+             LIMIT 1
         SQL);
 
         $result = $stmt->executeQuery();
@@ -286,6 +294,7 @@ class MigrateSubcolumnsCommand extends Command
              WHERE type LIKE "colset%"
                AND sc_columnset = ""
                AND sc_type != ""
+             LIMIT 1
         SQL);
 
         $result = $stmt->executeQuery();
@@ -391,13 +400,17 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function transformSubcolumnSetIntoGrid(int $parentId, array $ceDTOs): void
     {
+        $errMsg = " Please check manually and re-run the migration."
+            . " (SELECT * FROM tl_content WHERE sc_parent=\"$parentId\" AND type LIKE \"colset%\")";
+
         if (empty($ceDTOs) || \count($ceDTOs) < 2) {
-            throw new \DomainException('No or not enough content elements found for valid subcolumn set.');
+            throw new \DomainException("Not enough content elements found for colset to be valid." . $errMsg);
         }
 
-        $gridId = $this->mapMigratedGlobalSubcolumnDefinitionsToBsGridId[$ceDTOs[0]->getIdentifier()] ?? null;
+        $identifier = $ceDTOs[0]->getIdentifier();
+        $gridId = $this->mapMigratedGlobalSubcolumnIdentifiersToBsGridId[$identifier] ?? null;
         if (!$gridId) {
-            throw new \DomainException('No migrated global set found for content element.');
+            throw new \DomainException("No migrated set \"$identifier\" found." . $errMsg);
         }
 
         $start = null;
@@ -408,10 +421,12 @@ class MigrateSubcolumnsCommand extends Command
             switch ($ce->getType()) {
                 case self::CE_TYPE_COLSET_START:
                     if ($ce->getId() !== $parentId) {
-                        throw new \DomainException('Start element\'s parent id does not match.');
+                        throw new \DomainException(
+                            "Start element's id does not match its sc_parent id ({$ce->getId()} !== $parentId)." . $errMsg
+                        );
                     }
                     if ($start !== null) {
-                        throw new \DomainException('Multiple start elements found for subcolumn set.');
+                        throw new \DomainException('Multiple start elements found for subcolumn set.' . $errMsg);
                     }
                     $start = $ce;
                     break;
@@ -420,15 +435,15 @@ class MigrateSubcolumnsCommand extends Command
                     break;
                 case self::CE_TYPE_COLSET_END:
                     if ($stop !== null) {
-                        throw new \DomainException('Multiple stop elements found for subcolumn set.');
+                        throw new \DomainException('Multiple stop elements found for subcolumn set.' . $errMsg);
                     }
                     $stop = $ce;
                     break;
             }
         }
 
-        if (!$start) throw new \DomainException('No start element found for subcolumn set.');
-        if (!$stop)  throw new \DomainException('No stop element found for subcolumn set.');
+        if (!$start) throw new \DomainException('No start element found for subcolumn set.' . $errMsg);
+        if (!$stop)  throw new \DomainException('No stop element found for subcolumn set.' . $errMsg);
 
         $stmt = $this->connection->prepare(<<<'SQL'
             UPDATE tl_content
@@ -509,7 +524,7 @@ class MigrateSubcolumnsCommand extends Command
             $id = $this->insertColSetDefinition($config, $colset);
 
             $colset->setMigratedId($id);
-            $this->mapMigratedGlobalSubcolumnDefinitionsToBsGridId[$colset->getIdentifier()] = $id;
+            $this->mapMigratedGlobalSubcolumnIdentifiersToBsGridId[$colset->getIdentifier()] = $id;
 
             $newlyMigrated[] = $colset->getIdentifier();
         }
@@ -537,7 +552,7 @@ class MigrateSubcolumnsCommand extends Command
                 : null;
             if (!$identifier) continue;
             $migrated[] = $identifier;
-            $this->mapMigratedGlobalSubcolumnDefinitionsToBsGridId[$identifier] = (int) $row['id'];
+            $this->mapMigratedGlobalSubcolumnIdentifiersToBsGridId[$identifier] = (int) $row['id'];
         }
 
         return $migrated;
@@ -931,10 +946,8 @@ class MigrateSubcolumnsCommand extends Command
     /**
      * @throws DBALException
      */
-    protected function autoConfig(InputInterface $input): MigrationConfig
+    protected function autoConfig(InputInterface $input, MigrationConfig $config): void
     {
-        $config = new MigrationConfig();
-
         $from = $this->smartGetFrom($input);
         $config->setFrom($from);
 
@@ -967,8 +980,6 @@ class MigrateSubcolumnsCommand extends Command
                 //
                 // break;
         }
-
-        return $config;
     }
 
     //<editor-fold desc="Option 'from'">
