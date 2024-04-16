@@ -14,7 +14,7 @@ to your choice of
 - Contao 4.13 or higher
 - PHP 7.4 or higher
 - Either version 2 or 3 of `contao-bootstrap/grid` installed
-- Contao migrations up to date
+- Contao database migrations up to date
 - If you were using the [subcolumns bootstrap bundle](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle) prior to the migration,
 **you must update and migrate to version [1.13@beta](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle/tree/feature/set_selection)** before running this migration.
 
