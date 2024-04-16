@@ -21,6 +21,7 @@ class MigrationConfig
     /** @var int[] */
     protected array $sources = [];
     protected ?int $from = null;
+    protected ?string $profile = null;
     protected int $gridVersion;
     protected int $parentThemeId;
     /** @var array<string, ColSetDefinition> */
@@ -69,6 +70,28 @@ class MigrationConfig
     {
         $this->checkArgument($from, self::FROM, 'from');
         $this->from = $from;
+        return $this;
+    }
+
+    public function getProfile(): ?string
+    {
+        return $this->profile;
+    }
+
+    public function setProfile(string $profile): self
+    {
+        if (\strpos($profile, 'yaml') !== false) {
+            throw new \InvalidArgumentException('YAML profiles are not supported.'
+                . ' Please check your profile option argument or contao config.');
+        }
+
+        $profile = \str_replace('boostrap', 'bootstrap', $profile);  // fix legacy typo
+
+        if ($profile === 'bootstrap') {
+            $profile = 'bootstrap3';
+        }
+
+        $this->profile = $profile;
         return $this;
     }
 
