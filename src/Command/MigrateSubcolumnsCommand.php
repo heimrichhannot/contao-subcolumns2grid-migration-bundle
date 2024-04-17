@@ -108,7 +108,7 @@ class MigrateSubcolumnsCommand extends Command
                 'The version of contao-bootstrap/grid to migrate to. Must be 2 or 3.'
             )
             ->addOption(
-                'profile',
+                'subcolumn-profile',
                 'p',
                 InputOption::VALUE_REQUIRED,
                 'The profile to migrate. Must be the name of a profile in the SubColumns module.'
@@ -1150,7 +1150,7 @@ class MigrateSubcolumnsCommand extends Command
 
     protected function getOptionProfile(InputInterface $input): ?string
     {
-        $profile = ($profile = $input->getOption('profile')) ? \ltrim($profile, ' :=') : null;
+        $profile = ($profile = $input->getOption('subcolumn-profile')) ? \ltrim($profile, ' :=') : null;
 
         if ($profile === null) {
             return null;
