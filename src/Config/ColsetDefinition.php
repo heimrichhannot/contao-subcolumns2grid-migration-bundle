@@ -176,8 +176,6 @@ class ColsetDefinition implements \Countable
                 $sizes[$breakpoint] = [];
             }
 
-            # fixme
-
             $cols = $dto->getColumns();
             \ksort($cols, \SORT_NUMERIC);
             $firstKey = \array_key_first($cols);
