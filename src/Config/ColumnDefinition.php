@@ -12,6 +12,7 @@ class ColumnDefinition implements \Serializable
     protected ?string $verticalAlign = null;
     protected ?string $customClasses = null;
     protected ?string $reset = '';
+    protected ?string $insideClass = null;
 
     public const RESET_NONE = '';
     public const RESET_ALL = '1';
@@ -94,6 +95,17 @@ class ColumnDefinition implements \Serializable
         return $this;
     }
 
+    public function getInsideClass(): ?string
+    {
+        return $this->insideClass;
+    }
+
+    public function setInsideClass(?string $insideClass): self
+    {
+        $this->insideClass = $insideClass;
+        return $this;
+    }
+
     public function asArray(): array
     {
         return [
@@ -111,7 +123,7 @@ class ColumnDefinition implements \Serializable
         return serialize($this->asArray());
     }
 
-    public function unserialize($data)
+    public function unserialize($data): void
     {
         $arr = StringUtil::deserialize($data);
         $this->setSpan($arr['width'] ?? null);

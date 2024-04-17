@@ -10,10 +10,14 @@ class MigrationConfig
         self::SOURCE_DB,
         self::SOURCE_GLOBALS,
     ];
+    public const NAME_SOURCES = [
+        self::SOURCE_DB => 'Database',
+        self::SOURCE_GLOBALS => 'Globals',
+    ];
 
     public const FROM_SUBCOLUMNS_MODULE = 2 ** 8 + 1;  // 257
     public const FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE = 2 ** 8 + 2;  // 258
-    protected const FROM = [
+    public const FROM = [
         self::FROM_SUBCOLUMNS_MODULE,
         self::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE,
     ];
@@ -64,6 +68,11 @@ class MigrationConfig
     public function getFrom(): int
     {
         return $this->from;
+    }
+
+    public function hasFrom(): bool
+    {
+        return !empty($this->from);
     }
 
     public function setFrom(int $from): self

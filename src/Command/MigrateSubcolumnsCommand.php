@@ -3,23 +3,28 @@
 namespace HeimrichHannot\Subcolumns2Grid\Command;
 
 use Contao\Config;
+use Contao\Controller;
 use Contao\CoreBundle\ContaoCoreBundle;
 use Contao\CoreBundle\Framework\ContaoFramework;
 use Contao\LayoutModel;
 use Contao\StringUtil;
 use Contao\System;
 use Contao\ThemeModel;
+use ContaoBootstrap\Grid\ContaoBootstrapGridBundle;
+use ContaoBootstrap\Grid\Model\GridModel;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Result;
 use FelixPfeiffer\Subcolumns\ModuleSubcolumns;
+use HeimrichHannot\Subcolumns2Grid\Config\BreakpointDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\ClassName;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
+use HeimrichHannot\Subcolumns2Grid\Exception\ConfigException;
 use HeimrichHannot\Subcolumns2Grid\HeimrichHannotSubcolumns2GridMigrationBundle;
 use HeimrichHannot\SubColumnsBootstrapBundle\SubColumnsBootstrapBundle;
 use Symfony\Component\Console\Command\Command;
@@ -123,10 +128,19 @@ class MigrateSubcolumnsCommand extends Command
         $this->framework->initialize();
 
         $io = new SymfonyStyle($input, $output);
-        $config = new MigrationConfig();
 
-        try {
-            return $this->migrate($input, $io, $config);
+        try
+        {
+            $this->checkGridBundle($io);
+
+            $config = $this->createConfig($input, $io);
+
+            return $this->migrate($config, $io);
+        }
+        catch (ConfigException $e)
+        {
+            $io->error($e->getMessage());
+            return Command::FAILURE;
         }
         catch (\Throwable $e)
         {
@@ -137,32 +151,49 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws \Throwable
-     * @throws DBALException
+     * @throws ConfigException
      */
-    protected function migrate(InputInterface $input, SymfonyStyle $io, MigrationConfig $config): int
+    protected function checkGridBundle(SymfonyStyle $io): void
     {
-        $io->title('Migrating sub-columns to grid columns');
-
-        $io->note('This command will migrate existing sub-columns to grid columns. Please make sure to backup your database before running this command.');
-        if (!$this->skipConfirmations && !$io->confirm('Proceed with the migration?')) {
-            return Command::SUCCESS;
+        if (!\class_exists(ContaoBootstrapGridBundle::class)) {
+            throw new ConfigException('The contao-bootstrap/grid bundle is not installed.');
         }
 
-        $io->text('Fetching migration sources and preparing migration.');
-        $this->autoConfig($input, $config);
+        Controller::loadDataContainer(GridModel::getTable());
+    }
 
-        if ($config->getProfile()) {
-            $io->info("The default profile is set to \"{$config->getProfile()}\".");
+    /**
+     * @throws \Exception
+     */
+    protected function createConfig(InputInterface $input, SymfonyStyle $io): MigrationConfig
+    {
+        $io->title('Setting up migration configuration');
+        $config = new MigrationConfig();
+
+        $io->text('Figuring out the default sub-column profile.');
+        $profile = $this->smartGetSubcolumnProfile($input);
+        if ($profile === null) {
+            throw new ConfigException('No default profile specified. Please set one in your site\'s configuration or provide the --profile option.');
+        }
+        $config->setProfile($profile);
+
+        if ($profile = $config->getProfile()) {
+            $io->info("The default profile is set to \"$profile\".");
         } else {
-            $io->error('No default profile specified. Please set one in your site\'s configuration or provide the --profile option.');
-            return Command::FAILURE;
+            throw new ConfigException('No default profile specified. Please set one in your site\'s configuration or provide the --profile option.');
         }
 
-        if ($config->getFrom()) {
+        $io->text('Figuring out the package to migrate from.');
+        $from = $this->smartGetFrom($input);
+        if ($from === null) {
+            throw new ConfigException('No package to migrate from specified and could not be detected automatically. Please check your database or provide the --from option.');
+        }
+        $config->setFrom($from);
+
+        if ($from = $config->getFrom()) {
             $io->info(
                 sprintf('You are migrating from %s.',
-                    $config->getFrom() === MigrationConfig::FROM_SUBCOLUMNS_MODULE
+                    $from === MigrationConfig::FROM_SUBCOLUMNS_MODULE
                         ? 'the legacy SubColumns module'
                         : 'SubColumnsBootstrapBundle')
             );
@@ -170,13 +201,28 @@ class MigrateSubcolumnsCommand extends Command
             $io->warning('No package to migrate from specified.');
         }
 
-        if (!$config->hasAnySource()) {
-            $io->error('No migration source found.');
-            return Command::FAILURE;
+        $io->text('Fetching migration sources.');
+        $this->autoConfigSources($config);
+
+        if ($config->hasAnySource()) {
+            $io->info(
+                \sprintf(
+                    'Found sources for migration in: %s.',
+                    implode(', ', \array_map(static function ($source) {
+                        $name = MigrationConfig::NAME_SOURCES[$source] ?? null;
+                        if ($name === null) {
+                            throw new ConfigException('Invalid source found.');
+                        }
+                        return $name;
+                    }, $config->getSources()))
+                )
+            );
+        } else {
+            throw new ConfigException('No migration source found.');
         }
 
-        $config->setGridVersion(self::initGridVersion($input, $io));
-        $io->info("Migrating to contao-bootstrap/grid version {$config->getGridVersion()}.");
+        $config->setGridVersion(self::initGridVersion($input, $io, $info));
+        $io->info($info ?? "Migrating to contao-bootstrap/grid version {$config->getGridVersion()}.");
 
         $config->setParentThemeId(self::initParentThemeId($input, $io));
         $io->info("Assigning new grid columns to parent theme with ID {$config->getParentThemeId()}.");
@@ -195,6 +241,22 @@ class MigrateSubcolumnsCommand extends Command
             $config->getParentThemeId(),
             $migratedIdentifiersCount > 0 ? ', which will be skipped' : ''
         ));
+
+        return $config;
+    }
+
+    /**
+     * @throws \Throwable
+     * @throws DBALException
+     */
+    protected function migrate(MigrationConfig $config, SymfonyStyle $io): int
+    {
+        $io->title('Migrating sub-columns to grid columns');
+
+        $io->note('This will migrate existing sub-columns to grid columns. Please make sure to backup your database before running this command.');
+        if (!$this->skipConfirmations && !$io->confirm('Proceed with the migration?')) {
+            return Command::SUCCESS;
+        }
 
         if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
         {
@@ -233,7 +295,7 @@ class MigrateSubcolumnsCommand extends Command
      * @throws \Throwable
      * @throws DBALException
      */
-    protected function migrateGlobal(SymfonyStyle $io, MigrationConfig $config)
+    protected function migrateGlobal(SymfonyStyle $io, MigrationConfig $config): void
     {
         $io->text('Fetching definitions from globals.');
         $globalSubcolumns = $this->fetchGlobalSetDefinitions($config);
@@ -249,7 +311,7 @@ class MigrateSubcolumnsCommand extends Command
         }, $globalSubcolumns));
         $io->info(\sprintf('Evaluated %s globally defined sub-column sets.', \count($globalSubcolumns)));
 
-        $io->text('Preparing templates for missing inside containers.');
+        $io->text('Preparing templates for missing inner wrappers.');
         $copiedTemplates = $this->prepareTemplates($globalSubcolumns);
 
         if (empty($copiedTemplates)) {
@@ -308,7 +370,8 @@ class MigrateSubcolumnsCommand extends Command
         $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(*)
               FROM information_schema.COLUMNS
-             WHERE TABLE_NAME = :table
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = :table
                AND COLUMN_NAME = :column
              LIMIT 1
         SQL);
@@ -347,13 +410,16 @@ class MigrateSubcolumnsCommand extends Command
             $identifier = \sprintf('globals.%s.%s', $currentProfile, $ce->getScType());
             $ce->setIdentifier($identifier);
 
+            $contentElements[$ce->getScParent()][] = $ce;
+        }
+
+        foreach ($contentElements as $scParentId => $ce)
+        {
             if (!$ce->getCustomTpl())
             {
-                $customTpl = $this->getColumnTemplateFromIdentifier($config, $identifier, $ce->getType());
+                $customTpl = $this->findColumnTemplate($config, $ce);
                 $ce->setCustomTpl($customTpl ?? '');
             }
-
-            $contentElements[$ce->getScParent()][] = $ce;
         }
 
         return $contentElements;
@@ -428,6 +494,7 @@ class MigrateSubcolumnsCommand extends Command
             SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name
               FROM tl_content
              WHERE type LIKE "colset%"
+             ORDER BY sc_parent, sc_sortid
                $sqlScColumnsetEmpty
         SQL);
         $result = $stmt->executeQuery();
@@ -756,24 +823,23 @@ class MigrateSubcolumnsCommand extends Command
 
             foreach ($profile['sets'] as $setName => $globalColsConfig)
             {
-                $sizes = $this->getSetDefinitionsFromArray($globalColsConfig);
+                $breakpoints = $this->createBreakpointsFromArray($globalColsConfig);
 
-                if (empty($sizes)) {
+                if (empty($breakpoints)) {
                     continue;
                 }
 
                 $idSource = $profileName === 'bootstrap' ? 'bootstrap3' : $profileName;
                 $identifier = \sprintf('globals.%s.%s', $idSource, $setName);
-                $maxColCount = \max(\array_map('count', $sizes) ?: [0]);
+                $maxColCount = \max(\array_map('count', $breakpoints) ?: [0]);
                 $rowClasses = "colcount_$maxColCount $idSource col-$setName sc-type-$setName";
 
                 $colset = ColsetDefinition::create()
                     ->setIdentifier($identifier)
                     ->setTitle("$label: $setName [global]")
                     ->setPublished(true)
-                    ->setSizeDefinitions($sizes)
+                    ->setBreakpoints($breakpoints)
                     ->setRowClasses($rowClasses)
-                    ->setInsideClass($inside ? 'inside' : null)
                     ->setUseInside((bool) $inside)
                 ;
 
@@ -794,12 +860,12 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @param array $colsConfig
-     * @return array<string, array<int, ColumnDefinition>>
+     * @return array<string, BreakpointDTO>
      */
-    protected function getSetDefinitionsFromArray(array $colsConfig): array
+    protected function createBreakpointsFromArray(array $colsConfig): array
     {
-        /** @var array<string, array<int, ColumnDefinition>> $sizes */
-        $sizes = [];
+        /** @var array<string, BreakpointDTO> $breakpoints */
+        $breakpoints = [];
 
         $colIndex = 0;
         foreach ($colsConfig as $singleCol)
@@ -811,20 +877,25 @@ class MigrateSubcolumnsCommand extends Command
             $customClasses = [];
             $classNames = \explode(' ', \preg_replace('/\s+/i', ' ', $singleCol[0]));
             $colClasses = $this->createClassNames($classNames, $customClasses);
+            $insideClass = $singleCol[1] ?? 'inside';
 
             foreach ($colClasses as $objColClass)
             {
-                $breakpoint = $objColClass->breakpoint ?: self::UNSPECIFIC_PLACEHOLDER;
+                $strBreakpoint = $objColClass->breakpoint ?: self::UNSPECIFIC_PLACEHOLDER;
 
-                if (!isset($sizes[$breakpoint]))
+                $dto = ($breakpoints[$strBreakpoint] ??= new BreakpointDTO($strBreakpoint));
+
+                if (!$dto->has($colIndex))
                 {
-                    $sizes[$breakpoint] = [];
+                    $dto->set(
+                        $colIndex,
+                        ColumnDefinition::create()
+                            ->setCustomClasses(\implode(' ', $customClasses))
+                            ->setInsideClass($insideClass)
+                    );
                 }
 
-                $sizes[$breakpoint][$colIndex] ??= ColumnDefinition::create()
-                    ->setCustomClasses(\implode(' ', $customClasses));
-
-                $col = $sizes[$breakpoint][$colIndex];
+                $col = $dto->get($colIndex);
 
                 switch ($objColClass->type)
                 {
@@ -845,23 +916,26 @@ class MigrateSubcolumnsCommand extends Command
 
         // make sure that all breakpoints have the same amount of columns
 
-        $colCount = \max(\array_map('count', $sizes) ?: [0]);
+        $colCount = \max(\array_map('count', $breakpoints) ?: [0]);
 
-        foreach ($sizes as $breakpoint => $cols)
+        foreach ($breakpoints as $strBreakpoint => $dto)
         {
-            if (\count($cols) < $colCount)
+            if (\count($dto) < $colCount)
             {
                 for ($i = 0; $i < $colCount; $i++)
                 {
-                    $cols[$i] ??= ColumnDefinition::create();
+                    if (!$dto->has($i))
+                    {
+                        $dto->set($i, ColumnDefinition::create());
+                    }
                 }
-                $sizes[$breakpoint] = $cols;
+                $breakpoints[$strBreakpoint] = $dto;
             }
         }
 
-        $this->applyUnspecificSizes($sizes);
+        $this->applyUnspecificSizes($breakpoints);
 
-        return $sizes;
+        return $breakpoints;
     }
 
     /**
@@ -874,22 +948,23 @@ class MigrateSubcolumnsCommand extends Command
      * Unspecific classes do not overwrite their specific counterparts. New column definitions are created in case
      *   there is no equivalent column defined due to missing specific classes.
      *
-     * @param array $sizes
-     * @return void
+     * @param array<string, BreakpointDTO> $breakpointDTOs
      */
-    protected function applyUnspecificSizes(array &$sizes)
+    protected function applyUnspecificSizes(array &$breakpointDTOs): void
     {
-        $unspecificCols = $sizes[self::UNSPECIFIC_PLACEHOLDER] ?? [];
-        unset($sizes[self::UNSPECIFIC_PLACEHOLDER]);
+        $unspecificBreakpointDTO = $breakpointDTOs[self::UNSPECIFIC_PLACEHOLDER] ?? null;
+        unset($breakpointDTOs[self::UNSPECIFIC_PLACEHOLDER]);
 
-        if (empty($unspecificCols)) {
+        if (empty($unspecificBreakpointDTO)) {
             return;
         }
 
         $breakpointValues = \array_flip(self::BREAKPOINTS);
+        $strSmallestBreakpoint = self::BREAKPOINTS[0];
 
+        // figure out the smallest breakpoint that was specified
         $smallestKnownBreakpoint = 'xxl';
-        foreach (\array_keys($sizes) as $breakpoint)
+        foreach (\array_keys($breakpointDTOs) as $breakpoint)
         {
             if ($breakpointValues[$breakpoint] < $breakpointValues[$smallestKnownBreakpoint])
             {
@@ -901,29 +976,33 @@ class MigrateSubcolumnsCommand extends Command
             // the smallest available breakpoint has not yet been set,
             // therefore we just assign the unspecific classes to the smallest breakpoint (xs)
         {
-            $sizes[self::BREAKPOINTS[0]] = $unspecificCols;
+            $breakpointDTOs[$strSmallestBreakpoint] = $unspecificBreakpointDTO;
+            $unspecificBreakpointDTO->setBreakpoint($strSmallestBreakpoint);
             return;
         }
 
         // otherwise, the smallest breakpoint is already defined with css classes incorporating specific sizes,
-        // therefore we need to apply unspecific size as fallback to the smallest breakpoint
+        // therefore we need to apply the unspecific size as a fallback to the smallest breakpoint
 
-        $specificCols = $sizes[self::BREAKPOINTS[0]] ?? [];
+        $specificBreakpointDTO = $breakpointDTOs[$strSmallestBreakpoint] ?? null;
+        if ($specificBreakpointDTO === null) {
+            return;
+        }
 
-        $sizes[self::BREAKPOINTS[0]] = $unspecificCols;
+        $breakpointDTOs[$strSmallestBreakpoint] = $unspecificBreakpointDTO;
 
-        foreach ($specificCols as $colIndex => $specificCol)
+        foreach ($specificBreakpointDTO->getColumns() as $colIndex => $specificColDef)
         {
-            $unspecificCol = $sizes[self::BREAKPOINTS[0]][$colIndex] ?? null;
+            $unspecificColDef = $breakpointDTOs[$strSmallestBreakpoint]->get($colIndex);
 
-            if (null === $unspecificCol) {
-                $sizes[self::BREAKPOINTS[0]][$colIndex] = $specificCol;
+            if (null === $unspecificColDef) {
+                $breakpointDTOs[$strSmallestBreakpoint]->set($colIndex, $specificColDef);
                 continue;
             }
 
-            if ($span = $specificCol->getSpan())     $unspecificCol->setSpan($span);
-            if ($offset = $specificCol->getOffset()) $unspecificCol->setOffset($offset);
-            if ($order = $specificCol->getOrder())   $unspecificCol->setOrder($order);
+            if ($span = $specificColDef->getSpan())     $unspecificColDef->setSpan($span);
+            if ($offset = $specificColDef->getOffset()) $unspecificColDef->setOffset($offset);
+            if ($order = $specificColDef->getOrder())   $unspecificColDef->setOrder($order);
         }
     }
 
@@ -943,7 +1022,7 @@ class MigrateSubcolumnsCommand extends Command
         }
     }
 
-    //<editor-fold desc="Tamplate handling">
+    //<editor-fold desc="Template handling">
 
     /**
      * Copies the templates from this bundle's contao/templates to the project directory.
@@ -962,13 +1041,9 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $insideClasses = [];
-
         foreach ($colSets as $colSet)
         {
-            if ($colSet->getInsideClass())
-            {
-                $insideClasses[] = $colSet->getInsideClass();
-            }
+            $insideClasses = \array_merge($insideClasses, $colSet->getInsideClasses());
         }
 
         $copied = [];
@@ -1057,22 +1132,38 @@ class MigrateSubcolumnsCommand extends Command
         return \file_put_contents($target, \str_replace($search, $replace, $content));
     }
 
-    protected function getColumnTemplateFromIdentifier(
-        MigrationConfig $config,
-        string          $identifier,
-        string          $ceType
-    ): ?string {
-        $def = $config->getSubcolumnDefinition($identifier);
+    protected function findColumnTemplate(MigrationConfig $config, ColsetElementDTO $ce): ?string
+    {
+        $def = $config->getSubcolumnDefinition($ce->getIdentifier());
+
         if (!$def) {
-            throw new \DomainException("No sub-column definition found for identifier \"$identifier\".");
+            throw new \DomainException("No sub-column definition found for identifier \"{$ce->getIdentifier()}\". "
+                . "One or more database entries in tl_content or tl_form_field might be corrupt.");
         }
 
-        $insideClass = $def->getInsideClass();
-        if (!$def->getUseInside() || !$insideClass) {
+        if (!$def->getUseInside()) {
             return null;
         }
 
-        $type = self::RENAME_TYPE[$ceType];
+        $breakpoints = $def->getBreakpoints();
+        $insideClass = null;
+
+        foreach ($breakpoints as $breakpoint)
+        {
+            if (!$breakpoint->has($ce->getScOrder())) {
+                continue;
+            }
+            $insideClass = $breakpoint->get($ce->getScOrder())->getInsideClass();
+            if ($insideClass !== null) {
+                break;
+            }
+        }
+
+        if (!$insideClass) {
+            return null;
+        }
+
+        $type = self::RENAME_TYPE[$ce->getType()] ?? $ce->getType();
 
         return "ce_{$type}_inner_$insideClass";
     }
@@ -1080,12 +1171,15 @@ class MigrateSubcolumnsCommand extends Command
     //</editor-fold>
 
     /**
-     * @throws DBALException
+     * @throws \Exception
      */
-    protected function autoConfig(InputInterface $input, MigrationConfig $config): void
+    protected static function autoConfigSources(MigrationConfig $config): void
     {
-        $from = $this->smartGetFrom($input);
-        $config->setFrom($from);
+        $from = $config->getFrom();
+
+        if (!$config->hasFrom()) {
+            throw new \Exception('Not specified from which package to migrate.');
+        }
 
         switch ($from)
         {
@@ -1097,28 +1191,28 @@ class MigrateSubcolumnsCommand extends Command
 
                 throw new \InvalidArgumentException('Migrating from the SubColumnsBootstrapBundle is not supported yet.');
 
-                // $config->addFetch(MigrationConfig::FETCH_DB);
-                //
-                // if (\class_exists(ModuleSubcolumns::class)) {
-                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
-                //     break;
-                // }
-                //
-                // $stmt = $this->connection->prepare(<<<'SQL'
-                //     SELECT id FROM tl_content WHERE type IN :types AND sc_columnset LIKE "globals.%" LIMIT 1
-                // SQL);
-                // $stmt->bindValue('types', static::CE_TYPES);
-                //
-                // $res = $stmt->executeQuery();
-                // if ($res->rowCount() > 0) {
-                //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
-                // }
-                //
-                // break;
-        }
+            // $config->addFetch(MigrationConfig::FETCH_DB);
+            //
+            // if (\class_exists(ModuleSubcolumns::class)) {
+            //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
+            //     break;
+            // }
+            //
+            // $stmt = $this->connection->prepare(<<<'SQL'
+            //     SELECT id FROM tl_content WHERE type IN :types AND sc_columnset LIKE "globals.%" LIMIT 1
+            // SQL);
+            // $stmt->bindValue('types', static::CE_TYPES);
+            //
+            // $res = $stmt->executeQuery();
+            // if ($res->rowCount() > 0) {
+            //     $config->addFetch(MigrationConfig::FETCH_GLOBALS);
+            // }
+            //
+            // break;
 
-        $profile = $this->smartGetSubcolumnProfile($input);
-        $config->setProfile($profile);
+            default:
+                throw new \InvalidArgumentException('Invalid "from".');
+        }
     }
 
     //<editor-fold desc="Options">
@@ -1128,7 +1222,7 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function smartGetFrom(InputInterface $input): ?int
     {
-        return $this->getOptionFrom($input) ?? $this->autoDetectFrom();
+        return self::getOptionFrom($input) ?? $this->autoDetectFrom();
     }
 
     protected function smartGetSubcolumnProfile(InputInterface $input): ?string
@@ -1136,7 +1230,7 @@ class MigrateSubcolumnsCommand extends Command
         return $this->getOptionProfile($input) ?? Config::get('subcolumns');
     }
 
-    protected function getOptionFrom(InputInterface $input): ?int
+    protected static function getOptionFrom(InputInterface $input): ?int
     {
         $from = ($from = $input->getOption('from')) ? \ltrim($from, ' :=') : null;
 
@@ -1182,17 +1276,54 @@ class MigrateSubcolumnsCommand extends Command
             return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
         }
 
+        if ($this->dbColumnExists('tl_content', 'sc_columnset'))
+        {
+            return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
+        }
+
+        if ($this->dbColumnExists('tl_content', 'sc_type'))
+        {
+            return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
+        }
+
         return null;
     }
 
     //</editor-fold>
+
+    protected function initFrom(InputInterface $input, SymfonyStyle $io): int
+    {
+        $from = $this->smartGetFrom($input) ?? self::askForFrom($io);
+        if ($from === null) {
+            $io->error('No package to migrate from specified and could not be detected automatically. Please provide the --from option.');
+            return Command::FAILURE;
+        }
+        $from = self::getOptionFrom($input);
+        if ($from !== null && \in_array($from, MigrationConfig::FROM)) {
+            return $from;
+        }
+
+        if ($from === null) {
+            $from = self::askForFrom($io);
+        }
+    }
+
+    protected static function askForFrom(SymfonyStyle $io): int
+    {
+        $options = [
+            MigrationConfig::FROM_SUBCOLUMNS_MODULE => 'heimrichhannot/subcolumns',
+            MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE => 'heimrichhannot/contao-subcolumns-bootstrap-bundle',
+        ];
+        $from = $io->choice('Select which package to migrate from', $options);
+        return (int) $from;
+    }
 
     //<editor-fold desc="Grid version configuration">
 
     /**
      * @throws \Exception
      */
-    protected static function initGridVersion(InputInterface $input, SymfonyStyle $io): int
+    protected static function initGridVersion(InputInterface $input, SymfonyStyle $io, string &$info = null): int
     {
         $gridVersion = $input->getOption('grid-version');
         if ($gridVersion !== null && \in_array($gridVersion = (int) \ltrim($gridVersion, ' :='), [2, 3])) {
@@ -1201,16 +1332,13 @@ class MigrateSubcolumnsCommand extends Command
 
         if (!$gridVersion) {
             $version = ContaoCoreBundle::getVersion();
-            $phpVers = \phpversion();
+            $phpVers = \implode('.', \array_slice(\explode('.', \explode('-', \phpversion())[0]), 0, 3));
             $isContao5 = \version_compare($version, '5', '>=');
+            $io->text("Detected Contao version $version on PHP $phpVers.");
             if ($isContao5) {
-                $io->block([
-                    "Detected Contao version $version on PHP $phpVers.",
-                    "Necessarily migrating to contao-bootstrap/grid version 3."
-                ]);
+                $info = "Necessarily migrating to contao-bootstrap/grid version 3.";
                 $gridVersion = 3;
             } else {
-                $io->text("Detected Contao version $version on PHP $phpVers.");
                 $gridVersion = self::askForGridVersion($io);
             }
         }

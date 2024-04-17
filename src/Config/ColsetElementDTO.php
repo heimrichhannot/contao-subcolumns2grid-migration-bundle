@@ -18,6 +18,7 @@ class ColsetElementDTO
         'scType' => 'sc_type',
         'scName' => 'sc_name',
         'scColumnset' => 'sc_columnset',
+        'scOrder' => 'sc_sortid',
     ];
 
     protected ?int $id;
@@ -26,6 +27,7 @@ class ColsetElementDTO
     protected ?int $scParent;
     protected ?string $scType;
     protected ?string $scName;
+    protected ?int $scOrder;
     protected ?string $identifier;
     protected ?string $customTpl = null;
     protected array $columnsMap = self::DEFAULT_COLUMNS_MAP;
@@ -36,7 +38,7 @@ class ColsetElementDTO
         return $this->id;
     }
 
-    public function setId(int $id): ColsetElementDTO
+    public function setId(int $id): self
     {
         $this->id = $id;
         return $this;
@@ -47,7 +49,7 @@ class ColsetElementDTO
         return $this->type;
     }
 
-    public function setType(string $type): ColsetElementDTO
+    public function setType(string $type): self
     {
         $this->type = $type;
         return $this;
@@ -58,7 +60,7 @@ class ColsetElementDTO
         return $this->scChildren;
     }
 
-    public function setScChildren(string $scChildren): ColsetElementDTO
+    public function setScChildren(string $scChildren): self
     {
         $this->scChildren = $scChildren;
         return $this;
@@ -69,7 +71,7 @@ class ColsetElementDTO
         return $this->scParent;
     }
 
-    public function setScParent(int $scParent): ColsetElementDTO
+    public function setScParent(int $scParent): self
     {
         $this->scParent = $scParent;
         return $this;
@@ -80,7 +82,7 @@ class ColsetElementDTO
         return $this->scType;
     }
 
-    public function setScType(string $scType): ColsetElementDTO
+    public function setScType(string $scType): self
     {
         $this->scType = $scType;
         return $this;
@@ -91,9 +93,20 @@ class ColsetElementDTO
         return $this->scName;
     }
 
-    public function setScName(string $scName): ColsetElementDTO
+    public function setScName(string $scName): self
     {
         $this->scName = $scName;
+        return $this;
+    }
+
+    public function getScOrder(): ?int
+    {
+        return $this->scOrder;
+    }
+
+    public function setScOrder($scOrder): self
+    {
+        $this->scOrder = $scOrder;
         return $this;
     }
 
@@ -102,7 +115,7 @@ class ColsetElementDTO
         return $this->identifier;
     }
 
-    public function setIdentifier(string $identifier): ColsetElementDTO
+    public function setIdentifier(string $identifier): self
     {
         $this->identifier = $identifier;
         return $this;
@@ -113,7 +126,7 @@ class ColsetElementDTO
         return $this->customTpl;
     }
 
-    public function setCustomTpl(string $customTpl): ColsetElementDTO
+    public function setCustomTpl(string $customTpl): self
     {
         $this->customTpl = $customTpl;
         return $this;
@@ -156,6 +169,7 @@ class ColsetElementDTO
         $this->scParent = $this->getMappedValue($row, 'scParent') ?? $this->scParent ?? null;
         $this->scType = $this->getMappedValue($row, 'scType') ?? $this->scType ?? null;
         $this->scName = $this->getMappedValue($row, 'scName') ?? $this->scName ?? null;
+        $this->scOrder = $this->getMappedValue($row, 'scOrder') ?? $this->scOrder ?? null;
         $this->identifier = $this->getMappedValue($row, 'scColumnset') ?? $this->identifier ?? null;
         $this->customTpl = $this->getMappedValue($row, 'customTpl') ?? $this->customTpl ?? null;
         return $this;

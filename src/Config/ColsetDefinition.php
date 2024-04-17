@@ -12,12 +12,13 @@ class ColsetDefinition implements \Countable
     protected ?bool $useOutside;
     protected ?string $outsideClass;
     protected ?bool $useInside;
-    protected ?string $insideClass = 'inside';
     protected ?bool $published = false;
     protected ?string $cssID;
     protected ?string $rowClasses;
-    /** @var array<string, array<int, ColumnDefinition>> */
-    protected array $sizeDefinitions = [];
+    /**
+     * @var array<string, BreakpointDTO>
+     */
+    protected array $breakpoints = [];
 
     protected ?int $migratedId = null;
 
@@ -76,15 +77,13 @@ class ColsetDefinition implements \Countable
         return $this;
     }
 
-    public function getInsideClass(): ?string
+    public function getInsideClasses(): array
     {
-        return $this->insideClass;
-    }
-
-    public function setInsideClass(string $insideClass): self
-    {
-        $this->insideClass = $insideClass;
-        return $this;
+        $insideClasses = [];
+        foreach ($this->breakpoints as $breakpoint) {
+            $insideClasses = \array_merge($insideClasses, $breakpoint->getInsideClasses());
+        }
+        return \array_unique($insideClasses);
     }
 
     public function getPublished(): ?bool
@@ -100,40 +99,33 @@ class ColsetDefinition implements \Countable
 
     public function getSizes(): array
     {
-        return \array_keys($this->sizeDefinitions);
+        return \array_keys($this->breakpoints);
     }
 
-    public function addSize(string $breakpoint, ColumnDefinition $size): self
+    public function addSize(BreakpointDTO $dto): self
     {
-        $this->sizeDefinitions[$breakpoint] = $size;
+        $this->breakpoints[$dto->getBreakpoint()] = $dto;
         return $this;
     }
 
-    public function getSizeDefinitions(): array
+    public function getBreakpoints(): array
     {
-        return $this->sizeDefinitions;
+        return $this->breakpoints;
     }
 
     /**
-     * @param array<string, array<int, ColumnDefinition>> $sizeDefinitions
+     * @param BreakpointDTO[] $breakpoints
      * @return $this
      */
-    public function setSizeDefinitions(array $sizeDefinitions): self
+    public function setBreakpoints(array $breakpoints): self
     {
-        foreach ($sizeDefinitions as $sizeWrapper) {
-            if (!\is_array($sizeWrapper)) {
-                throw new \InvalidArgumentException(sprintf('Invalid size definition. Expected array, %s given.', \gettype($sizeWrapper)));
+        $this->breakpoints = [];
+        foreach ($breakpoints as $breakpoint) {
+            if (!$breakpoint instanceof BreakpointDTO) {
+                throw new \InvalidArgumentException(sprintf('Invalid size definition. Expected BreakpointDTO, %s given.', \gettype($breakpoint)));
             }
-            foreach ($sizeWrapper as $colNumber => $size) {
-                if (!\is_int($colNumber)) {
-                    throw new \InvalidArgumentException(sprintf('Invalid size definition. Key must be an integer, %s given.', gettype($colNumber)));
-                }
-                if (!$size instanceof ColumnDefinition) {
-                    throw new \InvalidArgumentException(sprintf('Invalid size definition. Value must be an instance of ColumnDefinition, %s given.', gettype($size)));
-                }
-            }
+            $this->breakpoints[$breakpoint->getBreakpoint()] = $breakpoint;
         }
-        $this->sizeDefinitions = $sizeDefinitions;
         return $this;
     }
 
@@ -178,21 +170,24 @@ class ColsetDefinition implements \Countable
     public function asArray(int $incrementIndices = 0): array
     {
         $sizes = [];
-        foreach ($this->sizeDefinitions as $breakpoint => $sizeWrapper)
+        foreach ($this->breakpoints as $breakpoint => $dto)
         {
             if (!isset($sizes[$breakpoint])) {
                 $sizes[$breakpoint] = [];
             }
 
-            \ksort($sizeWrapper, \SORT_NUMERIC);
-            $firstKey = \array_key_first($sizeWrapper);
+            # fixme
+
+            $cols = $dto->getColumns();
+            \ksort($cols, \SORT_NUMERIC);
+            $firstKey = \array_key_first($cols);
             if ($firstKey > 0) {
                 foreach (\range($incrementIndices,  $firstKey + $incrementIndices - 1) as $index) {
                     $sizes[$breakpoint][$index] = ColumnDefinition::create()->asArray();
                 }
             }
 
-            foreach ($sizeWrapper as $index => $size) {
+            foreach ($dto as $index => $size) {
                 $sizes[$breakpoint][$index + $incrementIndices] = $size->asArray();
             }
         }
