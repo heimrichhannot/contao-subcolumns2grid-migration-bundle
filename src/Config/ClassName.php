@@ -45,4 +45,13 @@ class ClassName
 
         return $class;
     }
+
+    public static function list(array $classNames, array &$customClasses = []): array
+    {
+        return \array_filter(
+            \array_map(static function ($strClass) use (&$customClasses) {
+                return ClassName::create($strClass, $customClasses);
+            }, $classNames)
+        );
+    }
 }

@@ -614,7 +614,7 @@ class MigrateSubcolumnsCommand extends Command
         $table = $start->getTable();
 
         /* ============================================== *\
-         * Transform the start element into a grid start.
+         * Transform the start element into a grid start. *
         \* ============================================== */
 
         $stmt = $this->connection->prepare(<<<SQL
@@ -874,9 +874,8 @@ class MigrateSubcolumnsCommand extends Command
                 continue;
             }
 
-            $customClasses = [];
             $classNames = \explode(' ', \preg_replace('/\s+/i', ' ', $singleCol[0]));
-            $colClasses = $this->createClassNames($classNames, $customClasses);
+            $colClasses = ClassName::list($classNames, $customClasses);
             $insideClass = $singleCol[1] ?? 'inside';
 
             foreach ($colClasses as $objColClass)
@@ -920,18 +919,21 @@ class MigrateSubcolumnsCommand extends Command
 
         foreach ($breakpoints as $strBreakpoint => $dto)
         {
-            if (\count($dto) < $colCount)
+            if (\count($dto) >= $colCount)
             {
-                for ($i = 0; $i < $colCount; $i++)
+                continue;
+            }
+
+            for ($i = 0; $i < $colCount; $i++)
+            {
+                if (!$dto->has($i))
                 {
-                    if (!$dto->has($i))
-                    {
-                        $dto->set($i, ColumnDefinition::create());
-                    }
+                    $dto->set($i, ColumnDefinition::create());
                 }
-                $breakpoints[$strBreakpoint] = $dto;
             }
         }
+
+        // replace unspecific placeholders with the smallest breakpoint available or update missing data
 
         $this->applyUnspecificSizes($breakpoints);
 
@@ -963,7 +965,7 @@ class MigrateSubcolumnsCommand extends Command
         $strSmallestBreakpoint = self::BREAKPOINTS[0];
 
         // figure out the smallest breakpoint that was specified
-        $smallestKnownBreakpoint = 'xxl';
+        $smallestKnownBreakpoint = self::BREAKPOINTS[\array_key_last(self::BREAKPOINTS)];
         foreach (\array_keys($breakpointDTOs) as $breakpoint)
         {
             if ($breakpointValues[$breakpoint] < $breakpointValues[$smallestKnownBreakpoint])
@@ -1004,15 +1006,6 @@ class MigrateSubcolumnsCommand extends Command
             if ($offset = $specificColDef->getOffset()) $unspecificColDef->setOffset($offset);
             if ($order = $specificColDef->getOrder())   $unspecificColDef->setOrder($order);
         }
-    }
-
-    protected function createClassNames(array $classNames, array &$customClasses = []): array
-    {
-        return \array_filter(
-            \array_map(static function ($strClass) use (&$customClasses) {
-                return ClassName::create($strClass, $customClasses);
-            }, $classNames)
-        );
     }
 
     protected function fetchDatabaseSubcolumns(): void
@@ -1238,8 +1231,9 @@ class MigrateSubcolumnsCommand extends Command
             case null: return null;
             case 'm': return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
             case 'b': return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
-            default: throw new \InvalidArgumentException('Invalid source.');
         }
+
+        throw new \InvalidArgumentException('Invalid source.');
     }
 
     protected function getOptionProfile(InputInterface $input): ?string
@@ -1255,6 +1249,7 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @throws DBALException
+     * @noinspection PhpUndefinedClassInspection
      */
     protected function autoDetectFrom(): ?int
     {
@@ -1289,25 +1284,6 @@ class MigrateSubcolumnsCommand extends Command
         return null;
     }
 
-    //</editor-fold>
-
-    protected function initFrom(InputInterface $input, SymfonyStyle $io): int
-    {
-        $from = $this->smartGetFrom($input) ?? self::askForFrom($io);
-        if ($from === null) {
-            $io->error('No package to migrate from specified and could not be detected automatically. Please provide the --from option.');
-            return Command::FAILURE;
-        }
-        $from = self::getOptionFrom($input);
-        if ($from !== null && \in_array($from, MigrationConfig::FROM)) {
-            return $from;
-        }
-
-        if ($from === null) {
-            $from = self::askForFrom($io);
-        }
-    }
-
     protected static function askForFrom(SymfonyStyle $io): int
     {
         $options = [
@@ -1317,6 +1293,8 @@ class MigrateSubcolumnsCommand extends Command
         $from = $io->choice('Select which package to migrate from', $options);
         return (int) $from;
     }
+
+    //</editor-fold>
 
     //<editor-fold desc="Grid version configuration">
 
