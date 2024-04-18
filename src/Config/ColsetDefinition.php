@@ -185,8 +185,8 @@ class ColsetDefinition implements \Countable
                 }
             }
 
-            foreach ($dto as $index => $size) {
-                $sizes[$breakpoint][$index + $incrementIndices] = $size->asArray();
+            foreach ($cols as $index => $colDef) {
+                $sizes[$breakpoint][$index + $incrementIndices] = $colDef->asArray();
             }
         }
         return $sizes;

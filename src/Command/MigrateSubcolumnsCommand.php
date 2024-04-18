@@ -26,7 +26,9 @@ use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Exception\ConfigException;
 use HeimrichHannot\Subcolumns2Grid\HeimrichHannotSubcolumns2GridMigrationBundle;
+use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use HeimrichHannot\SubColumnsBootstrapBundle\SubColumnsBootstrapBundle;
+use Random\RandomException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -67,6 +69,7 @@ class MigrateSubcolumnsCommand extends Command
 
     protected array $mapMigratedGlobalSubcolumnIdentifiersToBsGridId = [];
     protected bool $skipConfirmations = false;
+    protected bool $dryRun = false;
     protected array $templateCache = [];
     protected array $dbColumnsCache = [];
 
@@ -118,12 +121,19 @@ class MigrateSubcolumnsCommand extends Command
                 InputOption::VALUE_REQUIRED,
                 'The profile to migrate. Must be the name of a profile in the SubColumns module.'
             )
+            ->addOption(
+                'dry-run',
+                null,
+                InputOption::VALUE_NONE,
+                'Do not execute the migration, but show what would be done.'
+            )
         ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $this->skipConfirmations = $input->getOption('skip-confirmations') ?? false;
+        $this->dryRun = $input->getOption('dry-run') ?? false;
 
         $this->framework->initialize();
 
@@ -268,7 +278,22 @@ class MigrateSubcolumnsCommand extends Command
             else
             {
                 $io->section('Migrating globally defined sub-column sets.');
-                $this->migrateGlobal($io, $config);
+
+                try
+                {
+                    $this->connection->beginTransaction();
+
+                    $this->migrateGlobal($io, $config);
+
+                    $this->dryRun
+                        ? $this->connection->rollBack()
+                        : $this->connection->commit();
+                }
+                catch (\Throwable $e)
+                {
+                    $this->connection->rollBack();
+                    throw $e;
+                }
             }
         }
 
@@ -286,7 +311,11 @@ class MigrateSubcolumnsCommand extends Command
             $io->note($note);
         }
 
-        $io->success('Migration completed successfully.');
+        $io->success(
+            $this->dryRun
+                ? 'Migration dry run completed successfully. No changes were made.'
+                : 'Migration completed successfully.'
+        );
 
         return Command::SUCCESS;
     }
@@ -323,10 +352,26 @@ class MigrateSubcolumnsCommand extends Command
 
         $io->text('Migrating global sub-column definitions.');
         $newlyMigratedIdentifiers = $this->migrateGlobalSubcolumnDefinitions($config);
-        if (empty($newlyMigratedIdentifiers)) {
+
+        if (empty($newlyMigratedIdentifiers))
+        {
             $io->info('No globally defined sub-column sets had to be migrated anew.');
-        } else {
-            $io->listing($newlyMigratedIdentifiers);
+        }
+        else
+        {
+            $io->createTable()
+                ->setHeaders(['Identifier', 'Title', 'Breakpoints', 'Row classes'])
+                ->setRows(\array_map(static function ($identifier) use ($config) {
+                    $def = $config->getSubcolumnDefinition($identifier);
+                    return [
+                        $identifier,
+                        $def->getTitle() ?? '',
+                        \implode(', ', \array_keys($def->getBreakpoints())),
+                        $def->getRowClasses() ?? ''
+                    ];
+                }, $newlyMigratedIdentifiers))
+                ->render();
+
             $config->addMigratedIdentifiers(...$newlyMigratedIdentifiers);
             $io->success('Migrated global sub-column definitions successfully.');
         }
@@ -413,12 +458,15 @@ class MigrateSubcolumnsCommand extends Command
             $contentElements[$ce->getScParent()][] = $ce;
         }
 
-        foreach ($contentElements as $scParentId => $ce)
+        foreach ($contentElements as $scParentId => $ces)
         {
-            if (!$ce->getCustomTpl())
+            foreach ($ces as $ce)
             {
-                $customTpl = $this->findColumnTemplate($config, $ce);
-                $ce->setCustomTpl($customTpl ?? '');
+                if (!$ce->getCustomTpl())
+                {
+                    $customTpl = $this->findColumnTemplate($config, $ce);
+                    $ce->setCustomTpl($customTpl ?? '');
+                }
             }
         }
 
@@ -491,7 +539,7 @@ class MigrateSubcolumnsCommand extends Command
             : '';
 
         $stmt = $this->connection->prepare(<<<SQL
-            SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name
+            SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name, sc_sortid
               FROM tl_content
              WHERE type LIKE "colset%"
              ORDER BY sc_parent, sc_sortid
@@ -526,6 +574,7 @@ class MigrateSubcolumnsCommand extends Command
             'scParent'   => 'fsc_parent',
             'scType'     => 'fsc_type',
             'scName'     => 'fsc_name',
+            'scOrder'    => 'fsc_sortid',
         ], 'tl_form_field');
 
         $this->transformColsetElements($formFields);
@@ -537,19 +586,14 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected function transformColsetElements(array $colsetElements): void
     {
-        $this->connection->beginTransaction();
+        $this->connection->createSavepoint($uid = Helper::savepointId());
 
-        try {
-            foreach ($colsetElements as $parentId => $ceDTOs)
-            {
-                $this->transformColsetIntoGrid($parentId, $ceDTOs);
-            }
-        } catch (\Throwable $e) {
-            $this->connection->rollBack();
-            throw $e;
+        foreach ($colsetElements as $parentId => $ceDTOs)
+        {
+            $this->transformColsetIntoGrid($parentId, $ceDTOs);
         }
 
-        $this->connection->commit();
+        $this->connection->releaseSavepoint($uid);
     }
 
     /**
@@ -688,6 +732,7 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @throws DBALException
+     * @throws RandomException
      */
     protected function migrateGlobalSubcolumnDefinitions(MigrationConfig $config): array
     {
@@ -695,7 +740,7 @@ class MigrateSubcolumnsCommand extends Command
 
         $newlyMigrated = [];
 
-        $this->connection->beginTransaction();
+        $this->connection->createSavepoint($uid = Helper::savepointId());
         foreach ($config->getGlobalSubcolumnDefinitions() as $colset)
         {
             if (\in_array($colset->getIdentifier(), $migrated, true))
@@ -710,7 +755,7 @@ class MigrateSubcolumnsCommand extends Command
 
             $newlyMigrated[] = $colset->getIdentifier();
         }
-        $this->connection->commit();
+        $this->connection->releaseSavepoint($uid);
 
         return $newlyMigrated;
     }
@@ -961,37 +1006,23 @@ class MigrateSubcolumnsCommand extends Command
             return;
         }
 
-        $breakpointValues = \array_flip(self::BREAKPOINTS);
         $strSmallestBreakpoint = self::BREAKPOINTS[0];
 
-        // figure out the smallest breakpoint that was specified
-        $smallestKnownBreakpoint = self::BREAKPOINTS[\array_key_last(self::BREAKPOINTS)];
-        foreach (\array_keys($breakpointDTOs) as $breakpoint)
-        {
-            if ($breakpointValues[$breakpoint] < $breakpointValues[$smallestKnownBreakpoint])
-            {
-                $smallestKnownBreakpoint = $breakpoint;
-            }
-        }
+        $specificBreakpointDTO = $breakpointDTOs[$strSmallestBreakpoint] ?? null;
 
-        if ($breakpointValues[$smallestKnownBreakpoint] - 1 >= 0)
+        $breakpointDTOs[$strSmallestBreakpoint] = $unspecificBreakpointDTO;
+        $unspecificBreakpointDTO->setBreakpoint($strSmallestBreakpoint);
+
+        if ($specificBreakpointDTO === null)
             // the smallest available breakpoint has not yet been set,
-            // therefore we just assign the unspecific classes to the smallest breakpoint (xs)
+            // therefore we just keep the unspecific classes assigned to the smallest breakpoint (xs)
         {
-            $breakpointDTOs[$strSmallestBreakpoint] = $unspecificBreakpointDTO;
-            $unspecificBreakpointDTO->setBreakpoint($strSmallestBreakpoint);
             return;
         }
 
         // otherwise, the smallest breakpoint is already defined with css classes incorporating specific sizes,
         // therefore we need to apply the unspecific size as a fallback to the smallest breakpoint
 
-        $specificBreakpointDTO = $breakpointDTOs[$strSmallestBreakpoint] ?? null;
-        if ($specificBreakpointDTO === null) {
-            return;
-        }
-
-        $breakpointDTOs[$strSmallestBreakpoint] = $unspecificBreakpointDTO;
 
         foreach ($specificBreakpointDTO->getColumns() as $colIndex => $specificColDef)
         {

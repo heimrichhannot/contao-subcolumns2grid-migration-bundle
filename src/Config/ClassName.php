@@ -13,11 +13,13 @@ class ClassName
     public string $breakpoint;
     public string $width;
 
-    public static function create(string $strClass, array &$customClasses = []): ?self
+    public static function create(string $strClass, array &$customClasses = null): ?self
     {
         if (empty($strClass)) {
             return null;
         }
+
+        $customClasses ??= [];
 
         $class = new self();
         $class->class = $strClass;
@@ -46,7 +48,7 @@ class ClassName
         return $class;
     }
 
-    public static function list(array $classNames, array &$customClasses = []): array
+    public static function list(array $classNames, ?array &$customClasses = null): array
     {
         return \array_filter(
             \array_map(static function ($strClass) use (&$customClasses) {
