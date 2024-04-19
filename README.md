@@ -24,7 +24,7 @@ to your choice of
 
 > [!CAUTION]
 > You may also run the migration on Contao 5 with none of the subcolumns packages installed.
-> Just make sure to **run the Contao migration WITHOUT deletes** prior to this migration.
+> Just make sure to run the **Contao migration WITHOUT deletes** prior to this migration.
 
 
 ## Installation
