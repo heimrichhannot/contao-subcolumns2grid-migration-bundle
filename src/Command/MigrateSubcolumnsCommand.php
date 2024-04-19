@@ -367,7 +367,7 @@ class MigrateSubcolumnsCommand extends Command
                         $identifier,
                         $def->getTitle() ?? '',
                         \implode(', ', \array_keys($def->getBreakpoints())),
-                        $def->getRowClasses() ?? ''
+                        $def->getRowClasses() ?? '',
                     ];
                 }, $newlyMigratedIdentifiers))
                 ->render();
@@ -401,32 +401,6 @@ class MigrateSubcolumnsCommand extends Command
         {
             $io->info('No module form fields found.');
         }
-    }
-
-    /**
-     * @throws DBALException
-     */
-    protected function dbColumnExists(string $table, string $column): bool
-    {
-        if (isset($this->dbColumnsCache[$table . "." . $column])) {
-            return $this->dbColumnsCache[$table . "." . $column];
-        }
-
-        $stmt = $this->connection->prepare(<<<SQL
-            SELECT COUNT(*)
-              FROM information_schema.COLUMNS
-             WHERE TABLE_SCHEMA = DATABASE()
-               AND TABLE_NAME = :table
-               AND COLUMN_NAME = :column
-             LIMIT 1
-        SQL);
-
-        $stmt->bindValue('table', $table);
-        $stmt->bindValue('column', $column);
-
-        $result = $stmt->executeQuery();
-
-        return $this->dbColumnsCache[$table . "." . $column] = (int)$result->fetchOne() > 0;
     }
 
     /**
@@ -471,6 +445,14 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         return $contentElements;
+    }
+
+    /**
+     * @throws DBALException
+     */
+    protected function dbColumnExists(string $table, string $column): bool
+    {
+        return Helper::dbColumnExists($this->connection, $table, $column);
     }
 
     /**
@@ -1071,51 +1053,64 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $copied = [];
-        foreach (\array_unique($insideClasses) as $insideClass)
+        foreach (\array_unique($insideClasses) as $innerClass)
         {
-            $copied = \array_merge($copied, $this->copyTemplates($source, $target, 'inner', ['{insideClass}' => $insideClass]));
+            $copied = \array_merge(
+                $copied,
+                $this->copyTemplates($source, $target, null, $innerClass)
+            );
         }
 
         return $copied;
     }
 
     /**
-     * @param string $source The source directory.
-     * @param string $target The target directory.
-     * @param string $suffix The suffix included in the file name.
+     * @param string $sourceDir The source directory.
+     * @param string $targetDir The target directory.
+     * @param string|null $outerClass The outer class name.
+     * @param string|null $innerClass The inner class name.
      * @param array $replace The keys to replace in the template content and source file name.
      * @return array The copied files.
      */
-    protected function copyTemplates(string $source, string $target, string $suffix = '', array $replace = []): array
-    {
-        if (!\is_dir($source)) {
+    protected function copyTemplates(
+        string $sourceDir,
+        string $targetDir,
+        string $outerClass = null,
+        string $innerClass = null,
+        array  $replace = []
+    ): array {
+        if (!\is_dir($sourceDir)) {
             throw new \RuntimeException('Template source directory not found. Please reinstall the bundle.');
         }
 
-        if (!\is_dir($target)) {
+        if (!\is_dir($targetDir)) {
             throw new \RuntimeException('Template target directory not found.');
         }
 
-        if ($suffix && \substr($suffix, 0, 1) !== '_') {
-            $suffix = '_' . $suffix;
-        }
+        $outerFilePart = $outerClass ? '_outer_' . \trim($outerClass, '_') : '';
+        $innerFilePart = $innerClass ? '_inner_' . \trim($innerClass, '_') : '';
 
-        $rx = "/ce_bs_gridS(tart|eparator|top)$suffix(_[a-zA-Z0-9{}_]+)/";
+        $rx = "/ce_bs_gridS(tart|eparator|top)$outerFilePart$innerFilePart/";
+
+        $replace = \array_merge([
+            '{innerClass}' => $innerClass,
+            '{outerClass}' => $outerClass,
+        ], $replace);
 
         $search = \array_keys($replace);
         $replace = \array_values($replace);
 
         $copied = [];
 
-        foreach (\scandir($source) as $file)
+        foreach (\scandir($sourceDir) as $file)
         {
             if ($file === '.' || $file === '..') continue;
             if (!\preg_match($rx, $file)) continue;
 
-            $destination = $target . \DIRECTORY_SEPARATOR . \str_replace($search, $replace, $file);
+            $destination = $targetDir . \DIRECTORY_SEPARATOR . \str_replace($search, $replace, $file);
             if (\file_exists($destination)) continue;
 
-            $sourceFile = $source . \DIRECTORY_SEPARATOR . $file;
+            $sourceFile = $sourceDir . \DIRECTORY_SEPARATOR . $file;
 
             if ($this->copyTemplateFile($sourceFile, $destination, $file, $search, $replace) === false)
             {
@@ -1170,26 +1165,36 @@ class MigrateSubcolumnsCommand extends Command
         }
 
         $breakpoints = $def->getBreakpoints();
-        $insideClass = null;
+        $innerClass = null;
 
         foreach ($breakpoints as $breakpoint)
         {
-            if (!$breakpoint->has($ce->getScOrder())) {
+            if ($breakpoint->has($ce->getScOrder()))
+            {
+                $innerClass = $breakpoint->get($ce->getScOrder())->getInsideClass();
+            }
+            elseif ($ce->getType() === self::CE_TYPE_COLSET_END && $breakpoint->count())
+            {
+                $innerClass = $breakpoint->last()->getInsideClass() ?? $breakpoint->first()->getInsideClass();
+            }
+            else
+            {
                 continue;
             }
-            $insideClass = $breakpoint->get($ce->getScOrder())->getInsideClass();
-            if ($insideClass !== null) {
+
+            if ($innerClass !== null)
+            {
                 break;
             }
         }
 
-        if (!$insideClass) {
+        if (!$innerClass) {
             return null;
         }
 
         $type = self::RENAME_TYPE[$ce->getType()] ?? $ce->getType();
 
-        return "ce_{$type}_inner_$insideClass";
+        return "ce_{$type}_inner_$innerClass";
     }
 
     //</editor-fold>

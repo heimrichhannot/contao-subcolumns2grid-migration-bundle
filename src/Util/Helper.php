@@ -2,10 +2,14 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Util;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception as DBALException;
 use Random\RandomException;
 
 class Helper
 {
+    static protected array $dbColumnsCache = [];
+
     /**
      * @throws RandomException
      */
@@ -30,5 +34,33 @@ class Helper
     public static function savepointId(): string
     {
         return 'savepoint_' . \str_replace('-', '', self::GUIDv4());
+    }
+
+    /**
+     * @throws DBALException
+     */
+    public static function dbColumnExists(Connection $connection, string $table, string $column): bool
+    {
+        $cacheKey = $connection->getDatabase() . "." . $table . "." . $column;
+
+        if (isset(self::$dbColumnsCache[$cacheKey])) {
+            return self::$dbColumnsCache[$cacheKey];
+        }
+
+        $stmt = $connection->prepare(<<<SQL
+            SELECT COUNT(*)
+              FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND TABLE_NAME = :table
+               AND COLUMN_NAME = :column
+             LIMIT 1
+        SQL);
+
+        $stmt->bindValue('table', $table);
+        $stmt->bindValue('column', $column);
+
+        $result = $stmt->executeQuery();
+
+        return self::$dbColumnsCache[$cacheKey] = (int)$result->fetchOne() > 0;
     }
 }

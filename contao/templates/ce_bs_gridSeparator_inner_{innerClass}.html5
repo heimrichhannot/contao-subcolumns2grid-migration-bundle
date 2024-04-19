@@ -4,4 +4,4 @@
     <div class="clearfix w-100 <?= $reset ?>"></div>
     <?php endforeach; ?>
     <div<?= $this->cssID; ?> class="<?= $this->class ?> <?= $this->columnClasses ?>">
-        <div class="{insideClass}">
+        <div class="{innerClass}">

@@ -70,6 +70,16 @@ class BreakpointDTO implements Countable
         return isset($this->columns[$colIndex]) && $this->columns[$colIndex] !== null;
     }
 
+    public function first(): ?ColumnDefinition
+    {
+        return $this->columns[\array_key_first($this->columns)] ?? null;
+    }
+
+    public function last(): ?ColumnDefinition
+    {
+        return $this->columns[\array_key_last($this->columns)] ?? null;
+    }
+
     public function count(): int
     {
         return \count($this->columns);
