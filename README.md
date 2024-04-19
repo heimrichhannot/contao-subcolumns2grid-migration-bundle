@@ -1,4 +1,4 @@
-# Migrate H&#8239;&&#8239;H Subcolumns to CB Grids
+# Migrate H&#8239;<small>&amp;</small>&#8239;H Subcolumns to CB Grids
 
 This bundle aids in migrating from either one of
 - [`heimrichhannot/subcolumns`](https://github.com/heimrichhannot/contao-subcolumns)
