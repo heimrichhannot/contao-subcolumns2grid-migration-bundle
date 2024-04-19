@@ -22,8 +22,8 @@ to your choice of
 > Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
 > although it does not hurt if they are, provided you are running Contao 4.13.
 
-> [!IMPORTANT]
-> You can also run the migration on Contao 5 with none of the subcolumns packages installed.
+> [!CAUTION]
+> You may also run the migration on Contao 5 with none of the subcolumns packages installed.
 > Just make sure to **run the Contao migration WITHOUT deletes** prior to running this migration.
 
 
