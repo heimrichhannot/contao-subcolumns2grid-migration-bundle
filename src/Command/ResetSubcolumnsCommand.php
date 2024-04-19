@@ -29,13 +29,15 @@ class ResetSubcolumnsCommand extends Command
             ->setDescription('Reset grid columns to their original subcolumns');
     }
 
-    protected function execute(InputInterface $input, OutputInterface $output)
+    protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $io = new SymfonyStyle($input, $output);
 
         $io->title('Resetting sub-columns from migrated grid columns');
 
-        $io->note('This will reset all grid columns to their original subcolumns. This will retain the column definitions and their contents.');
+        $io->note('This will reset all grid columns to their original subcolumns. '
+            . 'This will retain content elements and form fields and their contents but change their types back to '
+            . 'what they were before the migration.');
         if (!$io->confirm('Proceed with the rollback?'))
         {
             return Command::SUCCESS;
@@ -45,50 +47,7 @@ class ResetSubcolumnsCommand extends Command
         {
             $this->connection->beginTransaction();
 
-            if ($io->confirm('Rollback tl_content?'))
-            {
-                if ($this->rollbackTlContent()) {
-                    $io->success('tl_content rolled back successfully.');
-                } else {
-                    $io->warning('tl_content was not rolled back.');
-                }
-            }
-
-            if ($io->confirm('Reset customTpl of colsets in in tl_content?'))
-            {
-                if ($this->resetCustomTplTlContent()) {
-                    $io->success('customTpl in tl_content reset successfully.');
-                } else {
-                    $io->warning('customTpl in tl_content was not reset.');
-                }
-            }
-
-            if ($io->confirm('Rollback tl_form_field?'))
-            {
-                if ($this->rollbackTlFormField()) {
-                    $io->success('tl_form_field rolled back successfully.');
-                } else {
-                    $io->warning('tl_form_field was not rolled back.');
-                }
-            }
-
-            if ($io->confirm('Reset customTpl of formcols in tl_form_field?'))
-            {
-                if ($this->resetCustomTplTlFormField()) {
-                    $io->success('customTpl in tl_form_field reset successfully.');
-                } else {
-                    $io->warning('customTpl in tl_form_field was not reset.');
-                }
-            }
-
-            if ($io->confirm('Delete all migrated grid definitions?'))
-            {
-                if ($this->rollbackTlBsGrid()) {
-                    $io->success('Migrated grid definitions deleted successfully.');
-                } else {
-                    $io->warning('Migrated grid definitions were not deleted.');
-                }
-            }
+            $this->reset($io);
 
             $this->connection->commit();
         }
@@ -100,6 +59,57 @@ class ResetSubcolumnsCommand extends Command
         }
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * @throws DBALException
+     */
+    protected function reset(SymfonyStyle $io): void
+    {
+        if ($io->confirm('Rollback tl_content?'))
+        {
+            if ($this->rollbackTlContent()) {
+                $io->success('tl_content rolled back successfully.');
+            } else {
+                $io->warning('tl_content was not rolled back.');
+            }
+        }
+
+        if ($io->confirm('Reset customTpl of colsets in in tl_content?'))
+        {
+            if ($this->resetCustomTplTlContent()) {
+                $io->success('customTpl in tl_content reset successfully.');
+            } else {
+                $io->warning('customTpl in tl_content was not reset.');
+            }
+        }
+
+        if ($io->confirm('Rollback tl_form_field?'))
+        {
+            if ($this->rollbackTlFormField()) {
+                $io->success('tl_form_field rolled back successfully.');
+            } else {
+                $io->warning('tl_form_field was not rolled back.');
+            }
+        }
+
+        if ($io->confirm('Reset customTpl of formcols in tl_form_field?'))
+        {
+            if ($this->resetCustomTplTlFormField()) {
+                $io->success('customTpl in tl_form_field reset successfully.');
+            } else {
+                $io->warning('customTpl in tl_form_field was not reset.');
+            }
+        }
+
+        if ($io->confirm('Delete all migrated grid definitions?'))
+        {
+            if ($this->rollbackTlBsGrid()) {
+                $io->success('Migrated grid definitions deleted successfully.');
+            } else {
+                $io->warning('Migrated grid definitions were not deleted.');
+            }
+        }
     }
 
     /**
