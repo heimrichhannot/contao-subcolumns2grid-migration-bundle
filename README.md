@@ -18,11 +18,13 @@ to your choice of
 - If you were using the [subcolumns bootstrap bundle](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle) prior to the migration,
 **you must update and migrate to version [1.13@beta](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle/tree/feature/set_selection)** before running this migration.
 
-> **Note:** Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
+> [!NOTE]
+> Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
 > although it does not hurt if they are, provided you are running Contao 4.13.
-> 
+
+> [!IMPORTANT]
 > You can also run the migration on Contao 5 with none of the subcolumns packages installed.
-> Just make sure to **run the contao migration WITHOUT deletes** prior to running this migration.
+> Just make sure to **run the Contao migration WITHOUT deletes** prior to running this migration.
 
 
 ## Installation
@@ -91,11 +93,15 @@ After the migration, you should check the affected pages and modules for any iss
 
 - The migration will only be commited to the database if no errors occur during the migration.
 - The migration will migrate global subcolumn set definitions from your `config.php` and `$GLOBALS['TL_SUBCL']`,
-  respectively, to grid definitions of any template you choose or of a new theme.
+  respectively, to grid definitions of any theme you select or optionally of a new theme.
 - The migration will migrate database-defined subcolumn definitions to grid definitions of any template you choose or
   of a new template.
 - The migration will transform subcolumn content elements to grid content elements.
 - The migration will not remove the subcolumns module or subcolumns bootstrap bundle.
 
-> **Note:** You may run the migration multiple times without causing any issues. It will not duplicate any grid definitions,
-> as long as you leave the created tags (e.g. `[sub2grid:source.profile.name]`) within the grid definition descriptions untouched. 
+> [!TIP]
+> You may run the migration multiple times without causing issues.
+
+> [!IMPORTANT]
+> Running the migration multiple times will not duplicate any grid definitions, as long as you leave the created tags
+> (e.g. `[sub2grid:source.profile.name]`) within the grid definition descriptions untouched. 
