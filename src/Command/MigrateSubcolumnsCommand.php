@@ -1035,15 +1035,16 @@ class MigrateSubcolumnsCommand extends Command
      *
      * @param array<ColsetDefinition> $colSets
      * @return array The prepared files.
+     * @throws \Exception
      */
     protected function prepareTemplates(array $colSets): array
     {
         $source = $this->getBundlePath() . '/contao/templates';
         $target = $this->parameterBag->get('kernel.project_dir') . '/contao/templates/elements';
 
-        if (!is_dir($target))
+        if (!\is_dir($target) && !\mkdir($target, 0777, true))
         {
-            mkdir($target, 0777, true);
+            throw new \Exception("Could not create template target directory: \"$target\"");
         }
 
         $insideClasses = [];
@@ -1087,10 +1088,7 @@ class MigrateSubcolumnsCommand extends Command
             throw new \RuntimeException('Template target directory not found.');
         }
 
-        $outerFilePart = $outerClass ? '_outer_' . \trim($outerClass, '_') : '';
-        $innerFilePart = $innerClass ? '_inner_' . \trim($innerClass, '_') : '';
-
-        $rx = "/ce_bs_gridS(tart|eparator|top)$outerFilePart$innerFilePart/";
+        $rx = "/ce_bs_gridS(tart|eparator|top)_.+/";
 
         $replace = \array_merge([
             '{innerClass}' => $innerClass,
