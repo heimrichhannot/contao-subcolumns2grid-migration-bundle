@@ -2,7 +2,7 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Util;
 
-class Constants
+final class Constants
 {
     public const CE_TYPE_COLSET_START = 'colsetStart';
     public const CE_TYPE_COLSET_PART = 'colsetPart';
