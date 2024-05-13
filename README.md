@@ -1,4 +1,4 @@
-# Migrate H&#8239;<small>&amp;</small>&#8239;H Subcolumns to CB Grids
+# Migrate H&#8239;<small>&amp;</small>&#8239;H Subcolumns to CB&#8239;Grids
 
 This bundle aids in migrating from either one of
 - [`heimrichhannot/subcolumns`](https://github.com/heimrichhannot/contao-subcolumns)
@@ -16,7 +16,7 @@ to your choice of
 - Either version 2 or 3 of `contao-bootstrap/grid` installed
 - Contao database migrations must be up-to-date
 - If you were using the [subcolumns bootstrap bundle](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle) prior to the migration,
-**you must update and migrate to version [1.13@beta](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle/tree/feature/set_selection)** before running this migration.
+  **you must update and migrate to version [1.13@beta](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle/tree/feature/set_selection)** before running this migration.
 
 > [!NOTE]
 > Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
@@ -93,9 +93,9 @@ After the migration, you should check the affected pages and modules for any iss
 
 - The migration will only be commited to the database if no errors occur during the migration.
 - The migration will migrate global subcolumn set definitions from your `config.php` and `$GLOBALS['TL_SUBCL']`,
-  respectively, to grid definitions of any theme you select or optionally of a new theme.
-- The migration will migrate database-defined subcolumn definitions to grid definitions of any template you choose or
-  of a new template.
+  respectively, to grid definitions of any theme you select or optionally of a newly created one.
+- The migration will migrate database-defined subcolumn definitions to grid definitions of any theme you choose or
+  a newly created one.
 - The migration will transform subcolumn content elements to grid content elements.
 - The migration will not remove the subcolumns module or subcolumns bootstrap bundle.
 

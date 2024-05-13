@@ -4,15 +4,11 @@ namespace HeimrichHannot\Subcolumns2Grid\Util;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DBALException;
-use Random\RandomException;
 
 class Helper
 {
     static protected array $dbColumnsCache = [];
 
-    /**
-     * @throws RandomException
-     */
     public static function GUIDv4($data = null): string
     {
         // Generate 16 bytes (128 bits) of random data or use the data passed into the function.
@@ -36,9 +32,6 @@ class Helper
         return 'savepoint_' . \str_replace('-', '', self::GUIDv4());
     }
 
-    /**
-     * @throws DBALException
-     */
     public static function dbColumnExists(Connection $connection, string $table, string $column): bool
     {
         $cacheKey = $connection->getDatabase() . "." . $table . "." . $column;

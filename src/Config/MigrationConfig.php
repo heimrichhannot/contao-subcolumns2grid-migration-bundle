@@ -2,6 +2,8 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Config;
 
+use HeimrichHannot\Subcolumns2Grid\Exception\ConfigException;
+
 class MigrationConfig
 {
     public const SOURCE_DB = 2 ** 9 + 1;  // 513
@@ -37,6 +39,29 @@ class MigrationConfig
     public function getSources(): array
     {
         return $this->sources;
+    }
+
+    public function getSourcesNamed(): array
+    {
+        return \array_map(static function ($source) {
+            return static::NAME_SOURCES[$source] ?? $source;
+        }, $this->getSources());
+    }
+
+    /**
+     * @throws ConfigException
+     * @internal Use getSourcesNamed() instead and filter invalid sources manually.
+     */
+    public function getValidSourcesNamed(): array
+    {
+        $names = $this->getSourcesNamed();
+        foreach ($names as $name) {
+            if (!\is_string($name)) {
+                $source = @\strval($name) ?? 'unknown';
+                throw new ConfigException("Invalid source found: \"$source\".");
+            }
+        }
+        return $names;
     }
 
     public function addSource(int $source): self
