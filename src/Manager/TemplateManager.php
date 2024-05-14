@@ -6,20 +6,10 @@ use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
-use Symfony\Component\HttpKernel\KernelInterface;
 
-class TemplateManager
+class TemplateManager extends AbstractManager
 {
-    protected KernelInterface $kernel;
-    protected ParameterBagInterface $parameterBag;
-
     protected array $templateCache = [];
-
-    public function __construct(KernelInterface $kernel, ParameterBagInterface $parameterBag) {
-        $this->kernel = $kernel;
-        $this->parameterBag = $parameterBag;
-    }
 
     /**
      * Copies the templates from this bundle's contao/templates to the project directory.
@@ -38,19 +28,38 @@ class TemplateManager
             throw new \Exception("Could not create template target directory: \"$target\"");
         }
 
-        $insideClasses = [];
+        $wrappedClasses = [0 => []];
         foreach ($colSets as $colSet)
         {
-            $insideClasses = \array_merge($insideClasses, $colSet->getInsideClasses());
+            $outsideClass = $colSet->getUseOutside() ? $colSet->getOutsideClass() ?: 0 : 0;
+            $wrappedClasses[$outsideClass] ??= [];
+
+            if ($colSet->getUseInside() && $insideClass = $colSet->getInsideClass())
+            {
+                $wrappedClasses[$outsideClass][] = $insideClass;
+            }
+            else
+            {
+                $wrappedClasses[$outsideClass] = \array_merge(
+                    $wrappedClasses[$outsideClass], $colSet->getInsideClasses()
+                );
+            }
         }
 
         $copied = [];
-        foreach (\array_unique($insideClasses) as $innerClass)
+        foreach ($wrappedClasses as $outerClass => $innerClasses)
         {
-            $copied = \array_merge(
-                $copied,
-                $this->copyTemplates($source, $target, null, $innerClass)
-            );
+            if ($outerClass === 0) {
+                $outerClass = null;
+            }
+
+            foreach (\array_unique($innerClasses) as $innerClass)
+            {
+                $copied = \array_merge(
+                    $copied,
+                    $this->copyTemplates($source, $target, $outerClass, $innerClass)
+                );
+            }
         }
 
         return $copied;
@@ -82,12 +91,13 @@ class TemplateManager
         $rx = "/ce_bs_gridS(tart|eparator|top)_.+/";
 
         $replace = \array_merge([
-            '{innerClass}' => $innerClass,
             '{outerClass}' => $outerClass,
+            '{innerClass}' => $innerClass,
         ], $replace);
 
         $search = \array_keys($replace);
         $replace = \array_values($replace);
+        $replaceFileName = \array_map([self::class, 'classNamesToFileNamePart'], $replace);
 
         $copied = [];
 
@@ -95,8 +105,11 @@ class TemplateManager
         {
             if ($file === '.' || $file === '..') continue;
             if (!\preg_match($rx, $file)) continue;
+            if (!$outerClass && \strpos($file, '{outerClass}') !== false) continue;
+            if (!$innerClass && \strpos($file, '{innerClass}') !== false) continue;
 
-            $destination = $targetDir . \DIRECTORY_SEPARATOR . \str_replace($search, $replace, $file);
+            $destination = $targetDir . \DIRECTORY_SEPARATOR . \str_replace($search, $replaceFileName, $file);
+
             if (\file_exists($destination)) continue;
 
             $sourceFile = $sourceDir . \DIRECTORY_SEPARATOR . $file;
@@ -140,7 +153,7 @@ class TemplateManager
         return \file_put_contents($target, \str_replace($search, $replace, $content));
     }
 
-    protected function findColumnTemplate(MigrationConfig $config, ColsetElementDTO $ce): ?string
+    public function findColumnTemplate(MigrationConfig $config, ColsetElementDTO $ce): ?string
     {
         $def = $config->getSubcolumnDefinition($ce->getIdentifier());
 
@@ -149,41 +162,52 @@ class TemplateManager
                 . "One or more database entries in tl_content or tl_form_field might be corrupt.");
         }
 
-        if (!$def->getUseInside()) {
-            return null;
-        }
+        $outerClass = $def->getUseOutside() ? $def->getOutsideClass() : null;
 
-        $breakpoints = $def->getBreakpoints();
         $innerClass = null;
-
-        foreach ($breakpoints as $breakpoint)
+        if ($def->getUseInside())
         {
-            if ($breakpoint->has($ce->getScOrder()))
-            {
-                $innerClass = $breakpoint->get($ce->getScOrder())->getInsideClass();
-            }
-            elseif ($ce->getType() === Constants::CE_TYPE_COLSET_END && $breakpoint->count())
-            {
-                $innerClass = $breakpoint->last()->getInsideClass() ?? $breakpoint->first()->getInsideClass();
-            }
-            else
-            {
-                continue;
-            }
+            $breakpoints = $def->getBreakpoints();
 
-            if ($innerClass !== null)
+            foreach ($breakpoints as $breakpoint)
             {
-                break;
-            }
-        }
+                if ($breakpoint->has($ce->getScOrder()))
+                {
+                    $innerClass = $breakpoint->get($ce->getScOrder())->getInsideClass();
+                }
+                elseif ($ce->getType() === Constants::CE_TYPE_COLSET_END && $breakpoint->count())
+                {
+                    $innerClass = $breakpoint->last()->getInsideClass() ?? $breakpoint->first()->getInsideClass();
+                }
+                else continue;
 
-        if (!$innerClass) {
-            return null;
+                if ($innerClass !== null) break;
+            }
         }
 
         $type = Constants::RENAME_TYPE[$ce->getType()] ?? $ce->getType();
 
-        return "ce_{$type}_inner_$innerClass";
+        $vars = [];
+        if ($outerClass) {
+            $outerHash = \substr(\md5($outerClass), 0, 4);
+            $outerClassPart = self::classNamesToFileNamePart($outerClass);
+            $outer = "outer_[$outerClassPart]($outerHash)";
+            $vars[] = $outer;
+        }
+
+        if ($innerClass) {
+            $innerHash = \substr(\md5($innerClass), 0, 4);
+            $innerClassPart = self::classNamesToFileNamePart($innerClass);
+            $inner = "inner_[$innerClassPart]($innerHash)";
+            $vars[] = $inner;
+        }
+
+        return "ce_{$type}_" . \implode('_', $vars);
+    }
+
+    public static function classNamesToFileNamePart(?string $classes): string
+    {
+        return (string) \preg_replace('/[^a-z0-9-_ ]/i', '', (string) $classes);
     }
 
     protected function getBundlePath(): string

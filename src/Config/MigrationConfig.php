@@ -32,9 +32,12 @@ class MigrationConfig
     protected int $parentThemeId;
     /** @var array<string, ColsetDefinition> */
     protected array $globalSubcolumnDefinitions = [];
+    protected array $dbSubcolumnDefinitions = [];
     protected array $migratedIdentifiers = [];
     /** @var string[] $notes */
     protected array $notes = [];
+    protected bool $sourceGlobalForced = false;
+    protected bool $sourceDBForced = false;
 
     public function getSources(): array
     {
@@ -155,16 +158,17 @@ class MigrationConfig
         return $this;
     }
 
+    public function getSubcolumnDefinition(string $identifier): ?ColsetDefinition
+    {
+        return $this->dbSubcolumnDefinitions[$identifier]
+            ?? $this->globalSubcolumnDefinitions[$identifier]
+            ?? null;
+    }
+
     /** @return ColumnDefinition[] */
     public function getGlobalSubcolumnDefinitions(): array
     {
         return $this->globalSubcolumnDefinitions;
-    }
-
-    public function getSubcolumnDefinition(string $identifier): ?ColsetDefinition
-    {
-        # todo: extend with db sets
-        return $this->globalSubcolumnDefinitions[$identifier] ?? null;
     }
 
     /**
@@ -174,6 +178,17 @@ class MigrationConfig
     public function setGlobalSubcolumnDefinitions(array $globalSubcolumns): self
     {
         $this->globalSubcolumnDefinitions = $globalSubcolumns;
+        return $this;
+    }
+
+    public function getDBSubcolumnDefinitions(): array
+    {
+        return $this->dbSubcolumnDefinitions;
+    }
+
+    public function setDBSubcolumnDefinitions(array $dbSubcolumnDefinitions): self
+    {
+        $this->dbSubcolumnDefinitions = $dbSubcolumnDefinitions;
         return $this;
     }
 
@@ -208,6 +223,28 @@ class MigrationConfig
     public function addNote(string $note): self
     {
         $this->notes[] = $note;
+        return $this;
+    }
+
+    public function isSourceGlobalForced(): bool
+    {
+        return $this->sourceGlobalForced;
+    }
+
+    public function setSourceGlobalForced(bool $sourceGlobalForced): self
+    {
+        $this->sourceGlobalForced = $sourceGlobalForced;
+        return $this;
+    }
+
+    public function isSourceDBForced(): bool
+    {
+        return $this->sourceDBForced;
+    }
+
+    public function setSourceDBForced(bool $sourceDBForced): self
+    {
+        $this->sourceDBForced = $sourceDBForced;
         return $this;
     }
 

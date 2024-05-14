@@ -105,6 +105,18 @@ class MigrateSubcolumnsCommand extends Command
                 InputOption::VALUE_NONE,
                 'Do not execute the migration, but show what would be done.'
             )
+            ->addOption(
+                'force-global',
+                null,
+                InputOption::VALUE_NONE,
+                'Force the migration of sub-column sets defined in $GLOBALS["TL_SUBCL"].'
+            )
+            ->addOption(
+                'force-db',
+                null,
+                InputOption::VALUE_NONE,
+                'Force the migration of sub-column sets defined in the database.'
+            )
         ;
     }
 
@@ -126,8 +138,23 @@ class MigrateSubcolumnsCommand extends Command
 
             $migrationConfig = $this->createMigrationConfig($input, $io);
 
-            if (!$this->migrationManager->migrate($cmdConfig, $migrationConfig, $io))
+            $this->connection->beginTransaction();
+
+            try
             {
+                $success = $this->migrationManager->migrate($cmdConfig, $migrationConfig, $io);
+            }
+            catch (\Throwable $e)
+            {
+                $this->connection->rollBack();
+                throw $e;
+            }
+
+            $success && !$cmdConfig->isDryRun()
+                ? $this->connection->commit()
+                : $this->connection->rollBack();
+
+            if (!$success) {
                 $io->error('Migration failed.');
                 return Command::FAILURE;
             }
@@ -185,7 +212,10 @@ class MigrateSubcolumnsCommand extends Command
         $io->title('Setting up migration configuration');
         $config = new MigrationConfig();
 
-        $io->text('Figuring out the default sub-column profile.');
+        $config->setSourceDBForced($input->getOption('force-db') ?? false);
+        $config->setSourceGlobalForced($input->getOption('force-global') ?? false);
+
+        $io->text('Assessing default sub-column profile...');
         $profile = $this->smartGetSubcolumnProfile($input);
         if ($profile === null) {
             throw new ConfigException('No default profile specified. Please set one in your site\'s configuration or provide the --subcolumn-profile option.');
@@ -198,7 +228,7 @@ class MigrateSubcolumnsCommand extends Command
             throw new ConfigException('No default profile specified. Please set one in your site\'s configuration or provide the --profile option.');
         }
 
-        $io->text('Figuring out the package to migrate from.');
+        $io->text('Assessing the package to migrate from...');
         $from = $this->smartGetFrom($input);
         if ($from === null) {
             throw new ConfigException('No package to migrate from specified and could not be detected automatically. Please check your database or provide the --from option.');
@@ -216,7 +246,7 @@ class MigrateSubcolumnsCommand extends Command
             $io->warning('No package to migrate from specified.');
         }
 
-        $io->text('Fetching migration sources.');
+        $io->text('Fetching migration sources...');
         $this->autoConfigSources($config);
 
         if (!$config->hasAnySource()) {
@@ -234,7 +264,7 @@ class MigrateSubcolumnsCommand extends Command
         $config->setParentThemeId(self::initParentThemeId($input, $io));
         $io->info("Assigning new grid columns to parent theme with ID {$config->getParentThemeId()}.");
 
-        $io->text('Fetching already migrated sub-column sets.');
+        $io->text('Fetching already migrated sub-column sets...');
         $migratedIdentifiers = $this->migrationManager->getMigratedIdentifiers($config->getParentThemeId());
         $config->setMigratedIdentifiers($migratedIdentifiers);
 
@@ -260,17 +290,34 @@ class MigrateSubcolumnsCommand extends Command
         return Helper::dbColumnExists($this->connection, $table, $column);
     }
 
-
     /**
      * @throws \Exception
      * @throws DBALDriverException
      */
     protected function autoConfigSources(MigrationConfig $config): void
     {
+        if ($config->isSourceGlobalForced()) {
+            $config->addSource(MigrationConfig::SOURCE_GLOBALS);
+        }
+
+        if ($config->isSourceDBForced()) {
+            $config->addSource(MigrationConfig::SOURCE_DB);
+        }
+
+        if ($config->isSourceGlobalForced() || $config->isSourceDBForced()) {
+            return;
+        }
+
         $from = $config->getFrom();
 
-        if (!$config->hasFrom()) {
-            throw new \Exception('Not specified from which package to migrate.');
+        if (!$config->hasFrom())
+        {
+            throw new ConfigException(
+                'Not specified from which package to migrate. '
+                . 'Either provide --from [m/b] to perform automatic checks on what needs migration, '
+                . 'or force the migration of $GLOBALS["TL_SUBCL"] with --force-global, '
+                . 'or force the migration of database defined sub-columns with --force-db.'
+            );
         }
 
         switch ($from)
@@ -350,7 +397,6 @@ class MigrateSubcolumnsCommand extends Command
 
     /**
      * @throws DBALException
-     * @noinspection PhpUndefinedClassInspection
      */
     protected function autoDetectFrom(): ?int
     {
@@ -482,7 +528,7 @@ class MigrateSubcolumnsCommand extends Command
             $layoutOptions[$layout->id] = $layout->name;
         }
         $id = $io->choice('Select the parent theme to assign the new grid columns to', $layoutOptions);
-        return (int) $id;  // (int) "new" === 0
+        return (int) $id;
     }
 
     protected static function createNewTheme(): int

@@ -12,6 +12,7 @@ class ColsetDefinition implements \Countable
     protected ?bool $useOutside;
     protected ?string $outsideClass;
     protected ?bool $useInside;
+    protected ?string $insideClass;
     protected ?bool $published = false;
     protected ?string $cssID;
     protected ?string $rowClasses;
@@ -19,6 +20,7 @@ class ColsetDefinition implements \Countable
      * @var array<string, BreakpointDTO>
      */
     protected array $breakpoints = [];
+    protected array $columnsetRow = [];
 
     protected ?int $migratedId = null;
 
@@ -44,7 +46,7 @@ class ColsetDefinition implements \Countable
         return $this;
     }
 
-    public function getUseOutside(): ?bool
+    public function getUseOutside(): bool
     {
         return $this->useOutside;
     }
@@ -57,7 +59,7 @@ class ColsetDefinition implements \Countable
 
     public function getOutsideClass(): ?string
     {
-        return $this->outsideClass;
+        return $this->outsideClass ?? null;
     }
 
     public function setOutsideClass(string $outsideClass): self
@@ -66,7 +68,7 @@ class ColsetDefinition implements \Countable
         return $this;
     }
 
-    public function getUseInside(): ?bool
+    public function getUseInside(): bool
     {
         return $this->useInside;
     }
@@ -84,6 +86,28 @@ class ColsetDefinition implements \Countable
             $insideClasses = \array_merge($insideClasses, $breakpoint->getInsideClasses());
         }
         return \array_unique($insideClasses);
+    }
+
+    public function getInsideClass(): ?string
+    {
+        return $this->insideClass ?? null;
+    }
+
+    public function setInsideClass(string $insideClass): self
+    {
+        $this->insideClass = $insideClass;
+        return $this;
+    }
+
+    public function setColumnsetRow(array $columnsetRow): self
+    {
+        $this->columnsetRow = $columnsetRow;
+        return $this;
+    }
+
+    public function getColumnsetRow(): array
+    {
+        return $this->columnsetRow;
     }
 
     public function getPublished(): ?bool
