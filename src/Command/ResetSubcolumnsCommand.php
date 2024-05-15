@@ -170,8 +170,8 @@ class ResetSubcolumnsCommand extends Command
             return false;
         }
 
-        $sqlSubColTypeNotEmpty = $scTypeExists ? 'sc_type IS NOT NULL AND sc_type != ""' : '0';
-        $sqlSubColNotEmpty = $scColumnsetExists ? 'sc_columnset IS NOT NULL AND sc_columnset != ""' : '0';
+        $sqlSubColTypeNotEmpty = $scTypeExists ? '(sc_type IS NOT NULL AND sc_type != "")' : '0';
+        $sqlSubColNotEmpty = $scColumnsetExists ? '(sc_columnset IS NOT NULL AND sc_columnset != "")' : '0';
 
         $sql = <<<SQL
             UPDATE `tl_content`
@@ -182,7 +182,7 @@ class ResetSubcolumnsCommand extends Command
                        ELSE type
                    END
              WHERE type IN ("bs_gridStart", "bs_gridSeparator", "bs_gridStop")
-               AND $sqlSubColTypeNotEmpty AND sc_type != "" OR $sqlSubColNotEmpty
+               AND ($sqlSubColTypeNotEmpty OR $sqlSubColNotEmpty)
             ;
         SQL;
 

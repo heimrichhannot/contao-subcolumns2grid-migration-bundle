@@ -14,6 +14,7 @@ use ContaoBootstrap\Grid\ContaoBootstrapGridBundle;
 use ContaoBootstrap\Grid\Model\GridModel;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DBALException as DBALDBALException;
 use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\ParameterType;
@@ -23,16 +24,15 @@ use HeimrichHannot\Subcolumns2Grid\Config\BreakpointDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\ClassName;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
-use HeimrichHannot\Subcolumns2Grid\Config\CommandConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Exception\ConfigException;
+use HeimrichHannot\Subcolumns2Grid\Exception\Sub2ColException;
 use HeimrichHannot\Subcolumns2Grid\HeimrichHannotSubcolumns2GridMigrationBundle;
 use HeimrichHannot\Subcolumns2Grid\Manager\MigrationManager;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use HeimrichHannot\SubColumnsBootstrapBundle\SubColumnsBootstrapBundle;
-use League\Csv\Exception;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -140,9 +140,13 @@ class MigrateSubcolumnsCommand extends Command
 
             $this->connection->beginTransaction();
 
-            try {
+            try
+            {
+                // this is where the magic happens
                 $this->migrationManager->migrate($io, $migrationConfig);
-            } catch (Throwable $t) {
+            }
+            catch (Throwable $t)
+            {
                 $this->connection->rollBack();
                 throw $t;
             }
@@ -162,7 +166,7 @@ class MigrateSubcolumnsCommand extends Command
 
             return Command::SUCCESS;
         }
-        catch (ConfigException $e)
+        catch (Sub2ColException $e)
         {
             $io->error($e->getMessage());
             return Command::FAILURE;
@@ -173,14 +177,6 @@ class MigrateSubcolumnsCommand extends Command
             $io->getErrorStyle()->block($e->getTraceAsString());
             return Command::FAILURE;
         }
-    }
-
-    protected function createCommandConfig(InputInterface $input): CommandConfig
-    {
-        return CommandConfig::create()
-            ->setDryRun($input->getOption('dry-run') ?? false)
-            ->setSkipConfirmations($input->getOption('skip-confirmations') ?? false)
-        ;
     }
 
     /**
@@ -196,8 +192,8 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws \Exception
-     * @throws DBALDriverException
+     * @throws DBALDriverException|DBALDBALException|DBALException
+     * @throws ConfigException
      */
     protected function createMigrationConfig(InputInterface $input, SymfonyStyle $io): MigrationConfig
     {
@@ -283,8 +279,8 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws \Exception
-     * @throws DBALDriverException
+     * @throws DBALDriverException|DBALDBALException|DBALException
+     * @throws ConfigException
      */
     protected function autoConfigSources(MigrationConfig $config): void
     {

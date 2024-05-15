@@ -3,17 +3,27 @@
 namespace HeimrichHannot\Subcolumns2Grid\Util;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DBALException as DBALDBALException;
+use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
+use Exception;
 
 class Helper
 {
     static protected array $dbColumnsCache = [];
 
+    /**
+     * @throws Exception
+     */
     public static function GUIDv4($data = null): string
     {
         // Generate 16 bytes (128 bits) of random data or use the data passed into the function.
-        $data = $data ?? \random_bytes(16);
-        \assert(\strlen($data) == 16);
+        try {
+            $data = $data ?? \random_bytes(16);
+            \assert(\strlen($data) == 16);
+        } catch (Exception $e) {
+            throw new Exception('Unable to generate a GUIDv4 string.');
+        }
 
         // Set version to 0100
         $data[6] = \chr(\ord($data[6]) & 0x0f | 0x40);
@@ -25,13 +35,16 @@ class Helper
     }
 
     /**
-     * @throws RandomException
+     * @throws Exception
      */
     public static function savepointId(): string
     {
         return 'savepoint_' . \str_replace('-', '', self::GUIDv4());
     }
 
+    /**
+     * @throws DBALDriverException|DBALDBALException|DBALException
+     */
     public static function dbColumnExists(Connection $connection, string $table, string $column): bool
     {
         $cacheKey = $connection->getDatabase() . "." . $table . "." . $column;

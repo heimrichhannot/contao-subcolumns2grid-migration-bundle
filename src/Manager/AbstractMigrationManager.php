@@ -4,10 +4,8 @@ namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
 use Doctrine\DBAL\Exception as DBALException;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
-use HeimrichHannot\Subcolumns2Grid\Config\CommandConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Throwable;
 
 abstract class AbstractMigrationManager extends AbstractManager
 {

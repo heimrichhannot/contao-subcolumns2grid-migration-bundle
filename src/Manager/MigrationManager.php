@@ -2,14 +2,15 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
+use Doctrine\DBAL\DBALException as DBALDBALException;
 use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
-use Exception;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
-use HeimrichHannot\Subcolumns2Grid\Config\CommandConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
+use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Throwable;
 
 class MigrationManager extends AbstractManager
 {
@@ -26,14 +27,17 @@ class MigrationManager extends AbstractManager
     }
 
     /**
-     * @throws \Throwable
+     * @throws Throwable
      * @throws DBALException
      */
     public function migrate(SymfonyStyle $io, MigrationConfig $config): bool
     {
         $io->title('Migrating sub-columns to grid columns');
 
-        $io->note('This will migrate existing sub-columns to grid columns. Please make sure to backup your database before running this command.');
+        $io->note(
+            'This will migrate existing sub-columns to grid columns. '
+            . 'Please make sure to backup your database before running this command.'
+        );
         if (!$io->confirm('Proceed with the migration?')) {
             return true;
         }
@@ -41,20 +45,20 @@ class MigrationManager extends AbstractManager
         if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
         {
             $this->globalsManager()->migrate($io, $config);
-            $this->alchemist()->transformModule($io, $config);
+            $this->moduleAlchemist()->transform($io, $config);
         }
 
         if ($config->hasSource(MigrationConfig::SOURCE_DB))
         {
             $this->dbManager()->migrate($io, $config);
-            $this->alchemist()->transformBundle($io, $config);
+            $this->bundleAlchemist()->transform($io, $config);
         }
 
         return true;
     }
 
     /**
-     * @throws DBALDriverException|DBALException
+     * @throws DBALDriverException|DBALDBALException|DBALException
      */
     public function getMigratedIdentifiers(int $parentThemeId): array
     {
@@ -79,7 +83,8 @@ class MigrationManager extends AbstractManager
     }
 
     /**
-     * @throws DBALException
+     * @throws DBALDriverException|DBALDBALException|DBALException
+     * @throws MigrationException
      */
     public function insertColSetDefinition(MigrationConfig $config, ColsetDefinition $colset): int
     {
@@ -126,7 +131,7 @@ class MigrationManager extends AbstractManager
         $lastId = $this->connection->lastInsertId();
 
         if (!$lastId) {
-            throw new Exception('Could not insert colset definition.');
+            throw new MigrationException('Could not insert colset definition.');
         }
 
         return (int) $lastId;

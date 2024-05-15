@@ -179,4 +179,9 @@ class ColsetElementDTO
     {
         return (new self())->updateColumnsMap($columnsMap)->setRow($row);
     }
+
+    public function isValid(): bool
+    {
+        return $this->id and $this->type and $this->scType || $this->identifier;
+    }
 }

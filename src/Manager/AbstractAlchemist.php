@@ -2,102 +2,85 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
+use Doctrine\DBAL\DBALException as DBALDBALException;
+use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Result;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
+use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Throwable;
 
-/**
- * This class is responsible for transforming module content elements and form fields into grid columns.
- */
-class Alchemist extends AbstractManager
+abstract class AbstractAlchemist extends AbstractManager
 {
-    public function transformBundle(SymfonyStyle $io, MigrationConfig $config)
-    {
+    public const NAME = 'alchemist';
 
+    public function getName(): string {
+        return $this::NAME;
     }
 
-    public function transformModule(SymfonyStyle $io, MigrationConfig $config)
-    {
-        $io->text('Checking for module content elements.');
-        if ($this->checkIfModuleContentElementsExist())
-        {
-            $io->text('Migrating module content elements.');
-            $this->transformModuleContentElements($config);
+    /**
+     * Check if there are relevant content elements in the database.
+     *
+     * Module content elements can be differentiated from subcolumn-bootstrap-bundle content elements,
+     *   because the latter have a sc_columnset field that is not empty.
+     */
+    public abstract function checkIfContentElementsExist();
 
-            $io->success('Migrated module content elements successfully.');
+    public abstract function getContentElements(MigrationConfig $config): array;
+
+    public abstract function checkIfFormFieldsExist();
+
+    public abstract function getFormFields(MigrationConfig $config): array;
+
+    protected abstract function identifierFromColsetElementDTO(MigrationConfig $config, ColsetElementDTO $dto): string;
+
+    /**
+     * @throws Throwable
+     * @throws DBALException
+     */
+    public function transform(SymfonyStyle $io, MigrationConfig $config)
+    {
+        $io->text("Checking for {$this->getName()} content elements.");
+        if ($this->checkIfContentElementsExist())
+        {
+            $io->text("Migrating {$this->getName()} content elements.");
+
+            $contentElements = $this->getContentElements($config);
+            $this->transformColsetElements($contentElements);
+
+            $io->success("Migrated {$this->getName()} content elements successfully.");
         }
         else
         {
-            $io->info('No module content elements found.');
+            $io->info("No {$this->getName()} content elements found.");
         }
 
-        $io->text('Checking for module form fields.');
-        if ($this->checkIfModuleFormFieldsExist())
+        $io->text("Checking for {$this->getName()} form fields.");
+        if ($this->checkIfFormFieldsExist())
         {
-            $io->text('Migrating module form fields.');
-            $this->transformModuleFormFields($config);
+            $io->text("Migrating {$this->getName()} form fields.");
 
-            $io->success('Migrated module form fields successfully.');
+            $formFields = $this->getFormFields($config);
+            $this->transformColsetElements($formFields);
+
+            $io->success("Migrated {$this->getName()} form fields successfully.");
         }
         else
         {
-            $io->info('No module form fields found.');
+            $io->info("No {$this->getName()} form fields found.");
         }
-    }
-
-    public function transformModuleContentElements(MigrationConfig $config): void
-    {
-        $sqlScColumnsetEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
-
-        $stmt = $this->connection->prepare(<<<SQL
-            SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name, sc_sortid
-              FROM tl_content
-             WHERE type LIKE "colset%"
-             ORDER BY sc_parent, sc_sortid
-               $sqlScColumnsetEmpty
-        SQL);
-        $result = $stmt->executeQuery();
-
-        $contentElements = $this->dbResult2colsetElementDTOs($config, $result);
-
-        $this->transformColsetElements($contentElements);
-    }
-
-    public function transformModuleFormFields(MigrationConfig $config): void
-    {
-        $sqlScColumnsetEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
-
-        $stmt = $this->connection->prepare(<<<SQL
-            SELECT id, type, customTpl, fsc_childs, fsc_parent, fsc_type, fsc_name
-              FROM tl_form_field
-             WHERE type LIKE "formcol%"
-               $sqlScColumnsetEmpty
-        SQL);
-        $result = $stmt->executeQuery();
-
-        $formFields = $this->dbResult2colsetElementDTOs($config, $result, [
-            'scChildren' => 'fsc_childs',
-            'scParent'   => 'fsc_parent',
-            'scType'     => 'fsc_type',
-            'scName'     => 'fsc_name',
-            'scOrder'    => 'fsc_sortid',
-        ], 'tl_form_field');
-
-        $this->transformColsetElements($formFields);
     }
 
     /**
      * @return array<int, ColsetElementDTO[]> A map of parent IDs to their respective colset element data transfer
      *   objects, that may either represent content elements or form fields.
+     * @throws MigrationException
+     * @throws DBALException
      */
     protected function dbResult2colsetElementDTOs(
         MigrationConfig $config,
@@ -105,8 +88,6 @@ class Alchemist extends AbstractManager
         ?array          $columnsMap = null,
         ?string         $table = null
     ): array {
-        $currentProfile = $config->getProfile();
-
         /** @var array<int, ColsetElementDTO[]> $contentElements */
         $contentElements = [];
 
@@ -117,7 +98,19 @@ class Alchemist extends AbstractManager
                 $ce->setTable($table);
             }
 
-            $identifier = \sprintf('globals.%s.%s', $currentProfile, $ce->getScType());
+            if (!$ce->isValid()) {
+                continue;
+            }
+
+            $identifier = $this->identifierFromColsetElementDTO($config, $ce);
+
+            if (!$identifier) {
+                throw new MigrationException(
+                    "Could not identify content element with ID {$ce->getId()}. "
+                    . "One or more database entries in tl_content or tl_form_field might be corrupt."
+                );
+            }
+
             $ce->setIdentifier($identifier);
 
             $contentElements[$ce->getScParent()][] = $ce;
@@ -140,9 +133,9 @@ class Alchemist extends AbstractManager
 
     /**
      * @param array<int, ColsetElementDTO[]> $colsetElements
-     * @throws DBALException|\Throwable
+     * @throws DBALException|\Exception
      */
-    public function transformColsetElements(array $colsetElements): void
+    protected function transformColsetElements(array $colsetElements): void
     {
         $this->connection->createSavepoint($uid = Helper::savepointId());
 
@@ -157,21 +150,28 @@ class Alchemist extends AbstractManager
     /**
      * @param int $parentId
      * @param ColsetElementDTO[] $ceDTOs
-     * @throws \DomainException
+     * @throws MigrationException
      */
     protected function transformColsetIntoGrid(int $parentId, array $ceDTOs): void
     {
-        $errMsg = " Please check manually and re-run the migration.\n"
-            . "(SELECT * FROM tl_content WHERE sc_parent=\"$parentId\" AND type LIKE \"colset%\" OR type LIKE \"formcol%\";)";
+        $errMsg = <<<MSG
+        
+        Please check manually and re-run the migration.
+            
+        SELECT `id`, `type`, `pid`, `ptable`, `sorting`, `tstamp`, `sc_sortid`, `sc_childs`,
+               `sc_parent`, `sc_type`, `sc_name`, `sc_columnset` FROM `tl_content`
+        WHERE `sc_parent`="$parentId" AND `type` LIKE "colset%" OR `type` LIKE "formcol%"
+        ORDER BY type DESC, id ASC;
+        MSG;
 
         if (empty($ceDTOs) || \count($ceDTOs) < 2) {
-            throw new \DomainException("Not enough content elements found for colset to be valid." . $errMsg);
+            throw new MigrationException("Not enough content elements found for colset to be valid." . $errMsg);
         }
 
         $identifier = $ceDTOs[0]->getIdentifier();
         $gridId = $this->migrationManager()->getGridIdFromMigratedIdentifier($identifier) ?? null;
         if (!$gridId) {
-            throw new \DomainException("No migrated set \"$identifier\" found." . $errMsg);
+            throw new MigrationException("No migrated column-set \"$identifier\" found." . $errMsg);
         }
 
         $start = null;
@@ -183,12 +183,12 @@ class Alchemist extends AbstractManager
                 case Constants::CE_TYPE_COLSET_START:
                 case Constants::FF_TYPE_FORMCOL_START:
                     if ($ce->getId() !== $parentId) {
-                        throw new \DomainException(
+                        throw new MigrationException(
                             "Start element's id does not match its sc_parent id ({$ce->getId()} !== $parentId)." . $errMsg
                         );
                     }
                     if ($start !== null) {
-                        throw new \DomainException('Multiple start elements found for sub-column set.' . $errMsg);
+                        throw new MigrationException('Multiple start elements found for sub-column set.' . $errMsg);
                     }
                     $start = $ce;
                     break;
@@ -199,17 +199,17 @@ class Alchemist extends AbstractManager
                 case Constants::CE_TYPE_COLSET_END:
                 case Constants::FF_TYPE_FORMCOL_END:
                     if ($stop !== null) {
-                        throw new \DomainException('Multiple stop elements found for sub-column set.' . $errMsg);
+                        throw new MigrationException('Multiple stop elements found for sub-column set.' . $errMsg);
                     }
                     $stop = $ce;
                     break;
                 default:
-                    throw new \DomainException('Invalid content element type found for sub-column set.' . $errMsg);
+                    throw new MigrationException('Invalid content element type found for sub-column set.' . $errMsg);
             }
         }
 
-        if (!$start) throw new \DomainException('No start element found for subcolumn set.' . $errMsg);
-        if (!$stop)  throw new \DomainException('No stop element found for subcolumn set.' . $errMsg);
+        if (!$start) throw new MigrationException('No start element found for subcolumn set.' . $errMsg);
+        if (!$stop)  throw new MigrationException('No stop element found for subcolumn set.' . $errMsg);
 
         $part = $parts[0] ?? null;
 
@@ -286,58 +286,5 @@ class Alchemist extends AbstractManager
         }
 
         $stmt->executeStatement();
-    }
-
-    /**
-     * Check if there are module content elements in the database.
-     *
-     * Module content elements can be differentiated from subcolumn-bootstrap-bundle content elements,
-     *   because the latter have a sc_columnset field that is not empty.
-     */
-    public function checkIfModuleContentElementsExist(): bool
-    {
-        $sqlColsetEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
-
-        $stmt = $this->connection->prepare(<<<SQL
-            SELECT COUNT(id)
-              FROM tl_content
-             WHERE type LIKE "colset%"
-               $sqlColsetEmpty
-               AND sc_type != ""
-             LIMIT 1
-        SQL);
-
-        $result = $stmt->executeQuery();
-
-        // if there are colset elements with a sc_type but no sc_columnset,
-        // they have to be module content elements
-        return (int)$result->fetchOne() > 0;
-    }
-
-    /**
-     * @see self::checkIfModuleContentElementsExist() but for form fields.
-     */
-    public function checkIfModuleFormFieldsExist(): bool
-    {
-        $sqlColsetEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
-
-        $stmt = $this->connection->prepare(<<<SQL
-            SELECT COUNT(id)
-              FROM tl_form_field
-             WHERE type LIKE "formcol%"
-               $sqlColsetEmpty
-               AND fsc_type != ""
-             LIMIT 1
-        SQL);
-
-        $result = $stmt->executeQuery();
-
-        // if there are colset elements with a fsc_type but no sc_columnset,
-        // they have to be module form fields
-        return (int)$result->fetchOne() > 0;
     }
 }

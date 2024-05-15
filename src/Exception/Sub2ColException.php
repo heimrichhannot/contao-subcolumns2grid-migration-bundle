@@ -2,6 +2,6 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Exception;
 
-class ConfigException extends Sub2ColException
+abstract class Sub2ColException extends \Exception
 {
 }

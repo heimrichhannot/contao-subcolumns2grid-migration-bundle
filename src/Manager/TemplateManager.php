@@ -5,10 +5,14 @@ namespace HeimrichHannot\Subcolumns2Grid\Manager;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
+use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 
 class TemplateManager extends AbstractManager
 {
+    const PREFIX_OUTER = 'o';
+    const PREFIX_INNER = 'i';
+
     protected array $templateCache = [];
 
     /**
@@ -90,14 +94,15 @@ class TemplateManager extends AbstractManager
 
         $rx = "/ce_bs_gridS(tart|eparator|top)_.+/";
 
-        $replace = \array_merge([
+        $replace = \array_merge($replace, [
             '{outerClass}' => $outerClass,
             '{innerClass}' => $innerClass,
-        ], $replace);
+            '[outer_part]'  => self::classNamesToFileNamePart($outerClass, self::PREFIX_OUTER),
+            '[inner_part]'  => self::classNamesToFileNamePart($innerClass, self::PREFIX_INNER),
+        ]);
 
         $search = \array_keys($replace);
         $replace = \array_values($replace);
-        $replaceFileName = \array_map([self::class, 'classNamesToFileNamePart'], $replace);
 
         $copied = [];
 
@@ -105,10 +110,10 @@ class TemplateManager extends AbstractManager
         {
             if ($file === '.' || $file === '..') continue;
             if (!\preg_match($rx, $file)) continue;
-            if (!$outerClass && \strpos($file, '{outerClass}') !== false) continue;
-            if (!$innerClass && \strpos($file, '{innerClass}') !== false) continue;
+            if (!$outerClass && \strpos($file, '[outer_part]') !== false) continue;
+            if (!$innerClass && \strpos($file, '[inner_part]') !== false) continue;
 
-            $destination = $targetDir . \DIRECTORY_SEPARATOR . \str_replace($search, $replaceFileName, $file);
+            $destination = $targetDir . \DIRECTORY_SEPARATOR . \str_replace($search, $replace, $file);
 
             if (\file_exists($destination)) continue;
 
@@ -153,13 +158,18 @@ class TemplateManager extends AbstractManager
         return \file_put_contents($target, \str_replace($search, $replace, $content));
     }
 
+    /**
+     * @throws MigrationException
+     */
     public function findColumnTemplate(MigrationConfig $config, ColsetElementDTO $ce): ?string
     {
         $def = $config->getSubcolumnDefinition($ce->getIdentifier());
 
         if (!$def) {
-            throw new \DomainException("No sub-column definition found for identifier \"{$ce->getIdentifier()}\". "
-                . "One or more database entries in tl_content or tl_form_field might be corrupt.");
+            throw new MigrationException(
+                "No sub-column definition found for identifier \"{$ce->getIdentifier()}\". "
+                . "One or more database entries in tl_content or tl_form_field might be corrupt."
+            );
         }
 
         $outerClass = $def->getUseOutside() ? $def->getOutsideClass() : null;
@@ -188,26 +198,38 @@ class TemplateManager extends AbstractManager
         $type = Constants::RENAME_TYPE[$ce->getType()] ?? $ce->getType();
 
         $vars = [];
-        if ($outerClass) {
-            $outerHash = \substr(\md5($outerClass), 0, 4);
-            $outerClassPart = self::classNamesToFileNamePart($outerClass);
-            $outer = "outer_[$outerClassPart]($outerHash)";
-            $vars[] = $outer;
-        }
-
-        if ($innerClass) {
-            $innerHash = \substr(\md5($innerClass), 0, 4);
-            $innerClassPart = self::classNamesToFileNamePart($innerClass);
-            $inner = "inner_[$innerClassPart]($innerHash)";
-            $vars[] = $inner;
-        }
+        if ($outerClass) { $vars[] = self::classNamesToFileNamePart($outerClass, true); }
+        if ($innerClass) { $vars[] = self::classNamesToFileNamePart($innerClass, false); }
 
         return "ce_{$type}_" . \implode('_', $vars);
     }
 
-    public static function classNamesToFileNamePart(?string $classes): string
+    public static function classNamesToFileNamePart(?string $classes, string $prefix = ''): string
     {
-        return (string) \preg_replace('/[^a-z0-9-_ ]/i', '', (string) $classes);
+        $classPart = (string) \preg_replace('/[^a-z0-9-_ ]/i', '', (string) $classes);
+        $classPart = \str_replace(' ', '_', $classPart);
+
+        $len = \strlen($classPart);
+
+        if ($len > 11 && $len < 15)
+        {
+            $classPart = \substr($classPart, 0, 10);
+        }
+        elseif ($len > 14)
+        {
+            $classPart = \sprintf(
+                '%s_%s',
+                \substr($classPart, 0, 5),
+                \substr($classPart, -5, 5)
+            );
+        }
+
+        return \sprintf(
+            '%s(%s)%s',
+            $prefix,
+            $classPart,
+            \substr(\md5($classes), 0, 4)
+        );
     }
 
     protected function getBundlePath(): string

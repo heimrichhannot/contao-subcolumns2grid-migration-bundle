@@ -3,6 +3,9 @@
 namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\DBALException as DBALDBALException;
+use Doctrine\DBAL\Driver\Exception as DBALDriverException;
+use Doctrine\DBAL\Exception as DBALException;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
@@ -28,6 +31,9 @@ abstract class AbstractManager implements ServiceSubscriberInterface
         $this->parameterBag = $parameterBag;
     }
 
+    /**
+     * @throws DBALDriverException|DBALDBALException|DBALException
+     */
     protected function dbColumnExists(string $table, string $column): bool
     {
         return Helper::dbColumnExists($this->connection, $table, $column);
@@ -36,17 +42,18 @@ abstract class AbstractManager implements ServiceSubscriberInterface
     public static function getSubscribedServices(): array
     {
         return [
-            Alchemist::class,
+            BundleAlchemist::class,
             MigrateDBColsManager::class,
             MigrateGlobalColsManager::class,
             MigrationManager::class,
+            ModuleAlchemist::class,
             TemplateManager::class,
         ];
     }
 
-    public function alchemist(): Alchemist
+    public function bundleAlchemist(): BundleAlchemist
     {
-        return $this->container->get(Alchemist::class);
+        return $this->container->get(BundleAlchemist::class);
     }
 
     protected function dbManager(): MigrateDBColsManager
@@ -64,13 +71,13 @@ abstract class AbstractManager implements ServiceSubscriberInterface
         return $this->container->get(MigrationManager::class);
     }
 
+    public function moduleAlchemist(): ModuleAlchemist
+    {
+        return $this->container->get(ModuleAlchemist::class);
+    }
+
     protected function templateManager(): TemplateManager
     {
         return $this->container->get(TemplateManager::class);
-    }
-
-    public function getConnection(): Connection
-    {
-        return $this->connection;
     }
 }
