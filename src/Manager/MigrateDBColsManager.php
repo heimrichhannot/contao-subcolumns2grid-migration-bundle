@@ -3,68 +3,25 @@
 namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
 use Contao\StringUtil;
-use Doctrine\DBAL\Exception as DBALException;
 use HeimrichHannot\Subcolumns2Grid\Config\BreakpointDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
-use HeimrichHannot\Subcolumns2Grid\Util\Helper;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
-class MigrateDBColsManager extends AbstractManager
+class MigrateDBColsManager extends AbstractMigrationManager
 {
-    public function migrate(SymfonyStyle $io, MigrationConfig $config): void
+    public const LANG_SUBJECT = 'database defined column-sets';
+    public const LANG_FETCHING_DEFINITIONS = 'Fetching columnset definitions from database...';
+
+    protected function getMigrationColumnSets(MigrationConfig $config): array
     {
-        $io->text('Fetching columnset definitions from database...');
-        $columnSets = $this->fetchSetDefinitions($config);
+        return $config->getDBSubcolumnDefinitions();
+    }
 
-        if (empty($columnSets)) {
-            $io->caution('Skipping migration of database column-set definitions, as none were found.');
-            return;
-        }
-
+    protected function setMigrationColumnSets(MigrationConfig $config, array $columnSets): void
+    {
         $config->setDBSubcolumnDefinitions($columnSets);
-        $io->listing(\array_map(static function (ColsetDefinition $colset) {
-            return $colset->getIdentifier();
-        }, $columnSets));
-        $io->info(\sprintf('Evaluated %s database defined column-sets.', \count($columnSets)));
-
-        $io->text('Preparing templates for missing outer containers and inner wrappers...');
-        $copiedTemplates = $this->templateManager()->prepareTemplates($columnSets);
-
-        if (empty($copiedTemplates)) {
-            $io->info('No templates had to be copied.');
-        } else {
-            $io->listing($copiedTemplates);
-            $io->success('Copied templates successfully.');
-        }
-
-        $io->text('Migrating database column-set definitions...');
-        $newlyMigratedIdentifiers = $this->migrateSubcolumnDefinitions($config);
-
-        if (empty($newlyMigratedIdentifiers))
-        {
-            $io->info('No database defined column-sets had to be migrated anew.');
-        }
-        else
-        {
-            $io->createTable()
-                ->setHeaders(['Identifier', 'Title', 'Breakpoints', 'Row classes'])
-                ->setRows(\array_map(static function ($identifier) use ($config) {
-                    $def = $config->getSubcolumnDefinition($identifier);
-                    return [
-                        $identifier,
-                        $def->getTitle() ?? '',
-                        \implode(', ', \array_keys($def->getBreakpoints())),
-                        $def->getRowClasses() ?? '',
-                    ];
-                }, $newlyMigratedIdentifiers))
-                ->render();
-
-            $config->addMigratedIdentifiers(...$newlyMigratedIdentifiers);
-            $io->success('Migrated global sub-column definitions successfully.');
-        }
     }
 
     protected function fetchSetDefinitions(MigrationConfig $config): array
@@ -191,35 +148,5 @@ class MigrateDBColsManager extends AbstractManager
         // }
 
         return $breakpoints;
-    }
-
-    /**
-     * @throws DBALException
-     * @throws \Random\RandomException
-     */
-    protected function migrateSubcolumnDefinitions(MigrationConfig $config): array
-    {
-        $migrated = $config->getMigratedIdentifiers();
-
-        $newlyMigrated = [];
-
-        $this->connection->createSavepoint($uid = Helper::savepointId());
-        foreach ($config->getDBSubcolumnDefinitions() as $colset)
-        {
-            if (\in_array($colset->getIdentifier(), $migrated, true))
-            {
-                continue;
-            }
-
-            $id = $this->migrationManager()->insertColSetDefinition($config, $colset);
-
-            $colset->setMigratedId($id);
-            $this->migrationManager()->mapIdentifierToGridId($colset->getIdentifier(), $id);
-
-            $newlyMigrated[] = $colset->getIdentifier();
-        }
-        $this->connection->releaseSavepoint($uid);
-
-        return $newlyMigrated;
     }
 }

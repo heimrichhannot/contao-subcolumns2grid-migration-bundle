@@ -16,6 +16,11 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 class Alchemist extends AbstractManager
 {
+    public function transformBundle(SymfonyStyle $io, MigrationConfig $config)
+    {
+
+    }
+
     public function transformModule(SymfonyStyle $io, MigrationConfig $config)
     {
         $io->text('Checking for module content elements.');

@@ -40,11 +40,11 @@ abstract class AbstractManager implements ServiceSubscriberInterface
             MigrateDBColsManager::class,
             MigrateGlobalColsManager::class,
             MigrationManager::class,
-            TemplateManager::class
+            TemplateManager::class,
         ];
     }
 
-    protected function alchemist(): Alchemist
+    public function alchemist(): Alchemist
     {
         return $this->container->get(Alchemist::class);
     }
@@ -67,5 +67,10 @@ abstract class AbstractManager implements ServiceSubscriberInterface
     protected function templateManager(): TemplateManager
     {
         return $this->container->get(TemplateManager::class);
+    }
+
+    public function getConnection(): Connection
+    {
+        return $this->connection;
     }
 }

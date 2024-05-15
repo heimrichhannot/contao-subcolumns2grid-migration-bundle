@@ -10,65 +10,20 @@ use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
-class MigrateGlobalColsManager extends AbstractManager
+class MigrateGlobalColsManager extends AbstractMigrationManager
 {
-    /**
-     * @throws \Throwable
-     * @throws DBALException
-     */
-    public function migrate(SymfonyStyle $io, MigrationConfig $config): void
+    public const LANG_SUBJECT = 'global sub-column sets';
+    public const LANG_FETCHING_DEFINITIONS = 'Fetching definitions from $GLOBALS["TL_SUBCL"]...';
+
+    protected function getMigrationColumnSets(MigrationConfig $config): array
     {
-        $io->text('Fetching definitions from globals...');
-        $columnSets = $this->fetchSetDefinitions($config);
+        return $config->getGlobalSubcolumnDefinitions();
+    }
 
-        if (empty($columnSets)) {
-            $io->caution('Skipping migration of globally defined sub-column profiles, as none were found.');
-            return;
-        }
-
+    protected function setMigrationColumnSets(MigrationConfig $config, array $columnSets): void
+    {
         $config->setGlobalSubcolumnDefinitions($columnSets);
-        $io->listing(\array_map(static function (ColsetDefinition $colset) {
-            return $colset->getIdentifier();
-        }, $columnSets));
-        $io->info(\sprintf('Evaluated %s globally defined sub-column sets.', \count($columnSets)));
-
-        $io->text('Preparing templates for missing inner wrappers...');
-        $copiedTemplates = $this->templateManager()->prepareTemplates($columnSets);
-
-        if (empty($copiedTemplates)) {
-            $io->info('No templates had to be copied.');
-        } else {
-            $io->listing($copiedTemplates);
-            $io->success('Copied templates successfully.');
-        }
-
-        $io->text('Migrating global sub-column definitions...');
-        $newlyMigratedIdentifiers = $this->migrateSubcolumnDefinitions($config);
-
-        if (empty($newlyMigratedIdentifiers))
-        {
-            $io->info('No globally defined sub-column sets had to be migrated anew.');
-        }
-        else
-        {
-            $io->createTable()
-                ->setHeaders(['Identifier', 'Title', 'Breakpoints', 'Row classes'])
-                ->setRows(\array_map(static function ($identifier) use ($config) {
-                    $def = $config->getSubcolumnDefinition($identifier);
-                    return [
-                        $identifier,
-                        $def->getTitle() ?? '',
-                        \implode(', ', \array_keys($def->getBreakpoints())),
-                        $def->getRowClasses() ?? '',
-                    ];
-                }, $newlyMigratedIdentifiers))
-                ->render();
-
-            $config->addMigratedIdentifiers(...$newlyMigratedIdentifiers);
-            $io->success('Migrated global sub-column definitions successfully.');
-        }
     }
 
     /**
@@ -266,35 +221,5 @@ class MigrateGlobalColsManager extends AbstractManager
             if ($offset = $specificColDef->getOffset()) $unspecificColDef->setOffset($offset);
             if ($order = $specificColDef->getOrder())   $unspecificColDef->setOrder($order);
         }
-    }
-
-    /**
-     * @throws DBALException
-     * @throws \Random\RandomException
-     */
-    protected function migrateSubcolumnDefinitions(MigrationConfig $config): array
-    {
-        $migrated = $config->getMigratedIdentifiers();
-
-        $newlyMigrated = [];
-
-        $this->connection->createSavepoint($uid = Helper::savepointId());
-        foreach ($config->getGlobalSubcolumnDefinitions() as $colset)
-        {
-            if (\in_array($colset->getIdentifier(), $migrated, true))
-            {
-                continue;
-            }
-
-            $id = $this->migrationManager()->insertColSetDefinition($config, $colset);
-
-            $colset->setMigratedId($id);
-            $this->migrationManager()->mapIdentifierToGridId($colset->getIdentifier(), $id);
-
-            $newlyMigrated[] = $colset->getIdentifier();
-        }
-        $this->connection->releaseSavepoint($uid);
-
-        return $newlyMigrated;
     }
 }

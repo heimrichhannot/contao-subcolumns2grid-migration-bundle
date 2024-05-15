@@ -4,6 +4,7 @@ namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
 use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
+use Exception;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\CommandConfig;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
@@ -12,71 +13,41 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 class MigrationManager extends AbstractManager
 {
-    protected array $mapMigratedGlobalSubcolumnIdentifiersToBsGridId = [];
-    protected array $mapMigratedDbSubcolumnIdentifiersToBsGridId = [];
+    protected array $mapMigratedIdentifiersToBsGridId = [];
 
     public function getGridIdFromMigratedIdentifier(string $identifier): ?int
     {
-        if (\substr($identifier, 0, 3) === 'db.') {
-            return $this->mapMigratedDbSubcolumnIdentifiersToBsGridId[$identifier] ?? null;
-        }
-        return $this->mapMigratedGlobalSubcolumnIdentifiersToBsGridId[$identifier] ?? null;
+        return $this->mapMigratedIdentifiersToBsGridId[$identifier] ?? null;
     }
 
-    public function mapIdentifierToGridId($identifier, $gid): void
+    public function mapIdentifierToGridId(string $identifier, int $gid): void
     {
-        if (\substr($identifier, 0, 3) === 'db.') {
-            $this->mapMigratedDbSubcolumnIdentifiersToBsGridId[$identifier] = $gid;
-        } else {
-            $this->mapMigratedGlobalSubcolumnIdentifiersToBsGridId[$identifier] = $gid;
-        }
+        $this->mapMigratedIdentifiersToBsGridId[$identifier] = $gid;
     }
 
     /**
      * @throws \Throwable
      * @throws DBALException
      */
-    public function migrate(CommandConfig $cmd, MigrationConfig $config, SymfonyStyle $io): bool
+    public function migrate(SymfonyStyle $io, MigrationConfig $config): bool
     {
         $io->title('Migrating sub-columns to grid columns');
 
         $io->note('This will migrate existing sub-columns to grid columns. Please make sure to backup your database before running this command.');
-        if (!$cmd->skipConfirmations() && !$io->confirm('Proceed with the migration?')) {
+        if (!$io->confirm('Proceed with the migration?')) {
             return true;
         }
 
         if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
         {
-            if (!$cmd->skipConfirmations() &&
-                !$io->confirm("Migrate globally defined sub-column profiles now?"))
-            {
-                $io->info("Skipping migration of globally defined sub-column sets.");
-            }
-            else
-            {
-                $io->section('Migrating globally defined sub-column sets.');
-
-                $this->globalsManager()->migrate($io, $config);
-
-                $this->alchemist()->transformModule($io, $config);
-            }
+            $this->globalsManager()->migrate($io, $config);
+            $this->alchemist()->transformModule($io, $config);
         }
 
         if ($config->hasSource(MigrationConfig::SOURCE_DB))
         {
-            if (!$cmd->skipConfirmations() &&
-                !$io->confirm("Migrate database defined column-sets now?"))
-            {
-                $io->info("Skipping migration of database defined column-sets.");
-            }
-            else
-            {
-                $io->info('Migrating database defined column-sets.');
-
-                $this->dbManager()->migrate($io, $config);
-
-                // todo: alchemist!
-            }
+            $this->dbManager()->migrate($io, $config);
+            $this->alchemist()->transformBundle($io, $config);
         }
 
         return true;
@@ -101,7 +72,7 @@ class MigrationManager extends AbstractManager
                 : null;
             if (!$identifier) continue;
             $migrated[] = $identifier;
-            $this->mapMigratedGlobalSubcolumnIdentifiersToBsGridId[$identifier] = (int) $row['id'];
+            $this->mapIdentifierToGridId($identifier, (int) $row['id']);
         }
 
         return $migrated;
@@ -152,6 +123,12 @@ class MigrationManager extends AbstractManager
         $stmt->bindValue('xxlSize', $serializeCol('xxl'));
         $stmt->executeStatement();
 
-        return $this->connection->lastInsertId();
+        $lastId = $this->connection->lastInsertId();
+
+        if (!$lastId) {
+            throw new Exception('Could not insert colset definition.');
+        }
+
+        return (int) $lastId;
     }
 }

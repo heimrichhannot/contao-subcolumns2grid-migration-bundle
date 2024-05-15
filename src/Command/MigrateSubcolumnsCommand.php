@@ -32,6 +32,7 @@ use HeimrichHannot\Subcolumns2Grid\Manager\MigrationManager;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use HeimrichHannot\SubColumnsBootstrapBundle\SubColumnsBootstrapBundle;
+use League\Csv\Exception;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -40,6 +41,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
 use Symfony\Component\HttpKernel\KernelInterface;
+use Throwable;
 
 class MigrateSubcolumnsCommand extends Command
 {
@@ -130,9 +132,7 @@ class MigrateSubcolumnsCommand extends Command
         {
             $this->loadGridBundle($io);
 
-            $cmdConfig = $this->createCommandConfig($input);
-
-            if ($cmdConfig->isDryRun()) {
+            if ($isDryRun = $input->getOption('dry-run') ?? false) {
                 $io->warning('Running in dry-run mode. No changes will be made to the database.');
             }
 
@@ -140,30 +140,22 @@ class MigrateSubcolumnsCommand extends Command
 
             $this->connection->beginTransaction();
 
-            try
-            {
-                $success = $this->migrationManager->migrate($cmdConfig, $migrationConfig, $io);
-            }
-            catch (\Throwable $e)
-            {
+            try {
+                $this->migrationManager->migrate($io, $migrationConfig);
+            } catch (Throwable $t) {
                 $this->connection->rollBack();
-                throw $e;
+                throw $t;
             }
 
-            $success && !$cmdConfig->isDryRun()
-                ? $this->connection->commit()
-                : $this->connection->rollBack();
-
-            if (!$success) {
-                $io->error('Migration failed.');
-                return Command::FAILURE;
-            }
+            $isDryRun
+                ? $this->connection->rollBack()
+                : $this->connection->commit();
 
             foreach ($migrationConfig->getNotes() as $note) {
                 $io->note($note);
             }
 
-            $io->success($cmdConfig->isDryRun()
+            $io->success($isDryRun
                 ? 'Migration dry run completed successfully. No changes were made.'
                 : 'Migration completed successfully.'
             );
