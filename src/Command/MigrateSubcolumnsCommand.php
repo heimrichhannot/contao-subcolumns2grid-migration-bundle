@@ -132,9 +132,7 @@ class MigrateSubcolumnsCommand extends Command
         {
             $this->loadGridBundle($io);
 
-            if ($isDryRun = $input->getOption('dry-run') ?? false) {
-                $io->warning('Running in dry-run mode. No changes will be made to the database.');
-            }
+            $isDryRun = $this->initDryRun($input, $io);
 
             $migrationConfig = $this->createMigrationConfig($input, $io);
 
@@ -179,6 +177,35 @@ class MigrateSubcolumnsCommand extends Command
             $io->getErrorStyle()->block($e->getTraceAsString());
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * @throws ConfigException|Throwable
+     */
+    protected function initDryRun(InputInterface $input, SymfonyStyle $io): bool
+    {
+        if (!($input->getOption('dry-run') ?? false))
+        {
+            return false;
+        }
+
+        $this->connection->executeStatement('CREATE TABLE IF NOT EXISTS `tl_s2g_transaction_test` (`id` INT PRIMARY KEY)');
+
+        $this->connection->beginTransaction();
+        $this->connection->executeStatement('INSERT INTO `tl_s2g_transaction_test` (`id`) VALUES (1)');
+        $this->connection->rollBack();
+
+        $supportsTransactions = $this->connection->executeQuery('SELECT COUNT(*) FROM `tl_s2g_transaction_test`')->fetchOne() === 0;
+
+        $this->connection->executeStatement('DROP TABLE `tl_s2g_transaction_test`');
+
+        if (!$supportsTransactions) {
+            throw new ConfigException('The database does not support transactions. Cannot run in dry-run mode.');
+        }
+
+        $io->warning('Running in dry-run mode. No changes will be made to the database.');
+
+        return true;
     }
 
     protected function printNotes(SymfonyStyle $io, MigrationConfig $config)
