@@ -20,8 +20,7 @@ class ModuleAlchemist extends AbstractAlchemist
     public function getContentElements(MigrationConfig $config): array
     {
         $sqlScColumnsetEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
+            ? 'AND sc_columnset = ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
             SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name, sc_sortid
@@ -32,14 +31,13 @@ class ModuleAlchemist extends AbstractAlchemist
         SQL);
         $result = $stmt->executeQuery();
 
-        return $this->dbResult2colsetElementDTOs($config, $result);
+        return $this->dbResult2colsetElementDTOs($config, $result, 'tl_content');
     }
 
     public function getFormFields(MigrationConfig $config): array
     {
         $sqlScColumnsetEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
+            ? 'AND sc_columnset = ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
             SELECT id, type, customTpl, fsc_childs, fsc_parent, fsc_type, fsc_name
@@ -49,13 +47,13 @@ class ModuleAlchemist extends AbstractAlchemist
         SQL);
         $result = $stmt->executeQuery();
 
-        return $this->dbResult2colsetElementDTOs($config, $result, [
+        return $this->dbResult2colsetElementDTOs($config, $result, 'tl_form_field', [
             'scChildren' => 'fsc_childs',
             'scParent'   => 'fsc_parent',
             'scType'     => 'fsc_type',
             'scName'     => 'fsc_name',
             'scOrder'    => 'fsc_sortid',
-        ], 'tl_form_field');
+        ]);
     }
 
     /**
@@ -64,8 +62,7 @@ class ModuleAlchemist extends AbstractAlchemist
     public function checkIfContentElementsExist(): bool
     {
         $sqlColsetEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
+            ? 'AND sc_columnset = ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(id)
@@ -86,8 +83,7 @@ class ModuleAlchemist extends AbstractAlchemist
     public function checkIfFormFieldsExist(): bool
     {
         $sqlColsetEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
+            ? 'AND sc_columnset = ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(id)

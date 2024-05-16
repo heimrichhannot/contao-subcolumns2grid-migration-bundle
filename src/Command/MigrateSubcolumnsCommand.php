@@ -155,9 +155,7 @@ class MigrateSubcolumnsCommand extends Command
                 ? $this->connection->rollBack()
                 : $this->connection->commit();
 
-            foreach ($migrationConfig->getNotes() as $note) {
-                $io->note($note);
-            }
+            $this->printNotes($io, $migrationConfig);
 
             $io->success($isDryRun
                 ? 'Migration dry run completed successfully. No changes were made.'
@@ -168,6 +166,10 @@ class MigrateSubcolumnsCommand extends Command
         }
         catch (Sub2ColException $e)
         {
+            if (isset($migrationConfig)) {
+                $this->printNotes($io, $migrationConfig);
+            }
+
             $io->error($e->getMessage());
             return Command::FAILURE;
         }
@@ -176,6 +178,13 @@ class MigrateSubcolumnsCommand extends Command
             $io->error($e->getMessage());
             $io->getErrorStyle()->block($e->getTraceAsString());
             return Command::FAILURE;
+        }
+    }
+
+    protected function printNotes(SymfonyStyle $io, MigrationConfig $config)
+    {
+        foreach ($config->getNotes() as $note) {
+            $io->note($note);
         }
     }
 
@@ -323,10 +332,10 @@ class MigrateSubcolumnsCommand extends Command
                         return false;
                     }
 
+                    $inTypes = \implode(', ', \array_map(fn($type) => "'$type'", $types));
                     $stmt = $this->connection->prepare(<<<SQL
-                        SELECT `id` FROM $table WHERE `type` IN :types AND `sc_columnset` LIKE "globals.%" LIMIT 1
+                        SELECT `id` FROM $table WHERE `type` IN ($inTypes) AND `sc_columnset` LIKE "globals.%" LIMIT 1
                     SQL);
-                    $stmt->bindValue('types', $types);
 
                     return $stmt->executeQuery()->rowCount() > 0;
                 };

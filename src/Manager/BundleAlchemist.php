@@ -7,6 +7,7 @@ use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
+use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
 
 /**
  * This class is responsible for transforming module content elements and form fields into grid columns.
@@ -15,9 +16,35 @@ class BundleAlchemist extends AbstractAlchemist
 {
     public const NAME = 'bundle';
 
+    /**
+     * @throws MigrationException
+     */
     protected function identifierFromColsetElementDTO(MigrationConfig $config, ColsetElementDTO $ce): string
     {
-        return $ce->getIdentifier();
+        return $ce->getIdentifier() ?? 'db.tl_columnset.' . $this->getScColumnsetIdFromColsetElementDTO($ce);
+    }
+
+    /**
+     * @throws MigrationException
+     */
+    protected function getScColumnsetIdFromColsetElementDTO(ColsetElementDTO $ce): int
+    {
+        $columnsetId = $ce->getScColumnsetId();
+        $pid = $ce->getPid();
+
+        if (!$pid) throw new MigrationException('No pid found in colset element DTO.');
+
+        if ($columnsetId)
+        {
+            $this->mapParentColumnsetId[$pid] = $columnsetId;
+        }
+        elseif (\array_key_exists($pid, $this->mapParentColumnsetId))
+        {
+            $columnsetId = $this->mapParentColumnsetId[$pid];
+        }
+        else throw new MigrationException('No columnset_id found in colset element DTO.');
+
+        return $columnsetId;
     }
 
     /**
@@ -25,20 +52,20 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function getContentElements(MigrationConfig $config): array
     {
-        $sqlScColumnsetEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
+        $scColumnsetExists = $this->dbColumnExists('tl_content', 'sc_columnset');
+        $sqlScColumnsetEmpty = $scColumnsetExists ? 'AND sc_columnset = ""' : '';
+        $sqlScColumnsetSelect = $scColumnsetExists ? ', sc_columnset' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
-            SELECT id, type, customTpl, sc_childs, sc_parent, sc_name, sc_sortid, sc_columnset
+            SELECT id, pid, type, customTpl, sorting, sc_type, sc_childs, sc_parent, sc_name, sc_sortid,
+                   addContainer, columnset_id $sqlScColumnsetSelect
               FROM tl_content
-             WHERE type LIKE "colset%"
-             ORDER BY sc_parent, sc_sortid
-               $sqlScColumnsetEmpty
+             WHERE `type` LIKE "colset%" $sqlScColumnsetEmpty
+             ORDER BY `sc_parent` ASC, `type` DESC, `sorting` ASC
         SQL);
         $result = $stmt->executeQuery();
 
-        return $this->dbResult2colsetElementDTOs($config, $result);
+        return $this->dbResult2colsetElementDTOs($config, $result, 'tl_content');
     }
 
     /**
@@ -46,26 +73,26 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function getFormFields(MigrationConfig $config): array
     {
-        $sqlScColumnsetEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
-            ? 'AND sc_columnset = ""'
-            : '';
+        $scColumnsetExists = $this->dbColumnExists('tl_form_field', 'sc_columnset');
+        $sqlScColumnsetEmpty = $scColumnsetExists ? 'AND sc_columnset = ""' : '';
+        $sqlScColumnsetSelect = $scColumnsetExists ? ', sc_columnset' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
-            SELECT id, type, customTpl, fsc_childs, fsc_parent, fsc_name, sc_columnset
+            SELECT id, pid, type, sorting, customTpl, fsc_type, fsc_childs, fsc_parent, fsc_name $sqlScColumnsetSelect
               FROM tl_form_field
-             WHERE type LIKE "formcol%"
-               $sqlScColumnsetEmpty
+             WHERE type LIKE "formcol%" $sqlScColumnsetEmpty
+             ORDER BY fsc_parent ASC, `type` DESC, sorting ASC
         SQL);
         $result = $stmt->executeQuery();
 
-        return $this->dbResult2colsetElementDTOs($config, $result, [
+        return $this->dbResult2colsetElementDTOs($config, $result, 'tl_form_field', [
             'scChildren'  => 'fsc_childs',
             'scParent'    => 'fsc_parent',
             'scType'      => 'fsc_type',
             'scName'      => 'fsc_name',
             'scOrder'     => 'fsc_sortid',
             'scColumnset' => 'sc_columnset'
-        ], 'tl_form_field');
+        ]);
     }
 
     /**
@@ -75,15 +102,14 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function checkIfContentElementsExist(): bool
     {
-        if (!$this->dbColumnExists('tl_content', 'sc_columnset')) {
-            return false;
-        }
+        $sqlScColumnsetNotEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
+            ? 'AND sc_columnset != ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(id)
               FROM tl_content
              WHERE type LIKE "colset%"
-               AND sc_columnset != ""
+               $sqlScColumnsetNotEmpty
              LIMIT 1
         SQL);
 
@@ -99,15 +125,14 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function checkIfFormFieldsExist(): bool
     {
-        if (!$this->dbColumnExists('tl_form_field', 'sc_columnset')) {
-            return false;
-        }
+        $sqlScColumnsetNotEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
+            ? 'AND sc_columnset != ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(id)
               FROM tl_form_field
              WHERE type LIKE "formcol%"
-               AND sc_columnset != ""
+               $sqlScColumnsetNotEmpty
              LIMIT 1
         SQL);
 

@@ -11,6 +11,7 @@ class ColsetElementDTO
      */
     public const DEFAULT_COLUMNS_MAP = [
         'id' => 'id',
+        'pid' => 'pid',
         'type' => 'type',
         'customTpl' => 'customTpl',
         'scChildren' => 'sc_childs',
@@ -19,17 +20,22 @@ class ColsetElementDTO
         'scName' => 'sc_name',
         'scColumnset' => 'sc_columnset',
         'scOrder' => 'sc_sortid',
+        'scColumnsetId' => 'columnset_id',
+        'scAddContainer' => 'addContainer',
     ];
 
     protected ?int $id;
+    protected ?int $pid;
     protected ?string $type;
-    protected ?string $scChildren;
-    protected ?int $scParent;
-    protected ?string $scType;
-    protected ?string $scName;
-    protected ?int $scOrder;
-    protected ?string $identifier;
-    protected ?string $customTpl = null;
+    protected ?string $scChildren = null;
+    protected ?int $scParent = null;
+    protected ?string $scType = null;
+    protected ?string $scName = null;
+    protected ?int $scOrder = null;
+    protected ?string $identifier = null;
+    protected ?int $scColumnsetId = null;
+    protected bool $scAddContainer = false;
+    protected string $customTpl = "";
     protected array $columnsMap = self::DEFAULT_COLUMNS_MAP;
     protected string $table = 'tl_content';
 
@@ -44,6 +50,17 @@ class ColsetElementDTO
         return $this;
     }
 
+    public function getPid(): int
+    {
+        return $this->pid;
+    }
+
+    public function setPid(int $pid): self
+    {
+        $this->pid = $pid;
+        return $this;
+    }
+
     public function getType(): string
     {
         return $this->type;
@@ -55,7 +72,7 @@ class ColsetElementDTO
         return $this;
     }
 
-    public function getScChildren(): string
+    public function getScChildren(): ?string
     {
         return $this->scChildren;
     }
@@ -66,7 +83,7 @@ class ColsetElementDTO
         return $this;
     }
 
-    public function getScParent(): int
+    public function getScParent(): ?int
     {
         return $this->scParent;
     }
@@ -77,7 +94,7 @@ class ColsetElementDTO
         return $this;
     }
 
-    public function getScType(): string
+    public function getScType(): ?string
     {
         return $this->scType;
     }
@@ -88,7 +105,7 @@ class ColsetElementDTO
         return $this;
     }
 
-    public function getScName(): string
+    public function getScName(): ?string
     {
         return $this->scName;
     }
@@ -110,7 +127,7 @@ class ColsetElementDTO
         return $this;
     }
 
-    public function getIdentifier(): string
+    public function getIdentifier(): ?string
     {
         return $this->identifier;
     }
@@ -118,6 +135,33 @@ class ColsetElementDTO
     public function setIdentifier(string $identifier): self
     {
         $this->identifier = $identifier;
+        return $this;
+    }
+
+    public function getScColumnsetId(): ?int
+    {
+        return $this->scColumnsetId;
+    }
+
+    public function setScColumnsetId($scColumnsetId): self
+    {
+        if (empty($scColumnsetId)) {
+            $scColumnsetId = null;
+        } elseif (!\is_int($scColumnsetId)) {
+            $scColumnsetId = (int) $scColumnsetId;
+        }
+        $this->scColumnsetId = $scColumnsetId;
+        return $this;
+    }
+
+    public function getScAddContainer(): bool
+    {
+        return $this->scAddContainer;
+    }
+
+    public function setScAddContainer(bool $scAddContainer): self
+    {
+        $this->scAddContainer = $scAddContainer;
         return $this;
     }
 
@@ -145,9 +189,9 @@ class ColsetElementDTO
         return $this;
     }
 
-    public function getTable(): string
+    public function getTable(): ?string
     {
-        return $this->table;
+        return $this->table ?? null;
     }
 
     public function setTable(string $table): self
@@ -164,14 +208,17 @@ class ColsetElementDTO
     public function setRow(array $row): self
     {
         $this->id = $this->getMappedValue($row, 'id') ?? $this->id ?? null;
+        $this->pid = $this->getMappedValue($row, 'pid') ?? $this->pid ?? null;
         $this->type = $this->getMappedValue($row, 'type') ?? $this->type ?? null;
+        $this->customTpl = $this->getMappedValue($row, 'customTpl') ?? $this->customTpl ?? null;
         $this->scChildren = $this->getMappedValue($row, 'scChildren') ?? $this->scChildren ?? null;
         $this->scParent = $this->getMappedValue($row, 'scParent') ?? $this->scParent ?? null;
         $this->scType = $this->getMappedValue($row, 'scType') ?? $this->scType ?? null;
         $this->scName = $this->getMappedValue($row, 'scName') ?? $this->scName ?? null;
         $this->scOrder = $this->getMappedValue($row, 'scOrder') ?? $this->scOrder ?? null;
         $this->identifier = $this->getMappedValue($row, 'scColumnset') ?? $this->identifier ?? null;
-        $this->customTpl = $this->getMappedValue($row, 'customTpl') ?? $this->customTpl ?? null;
+        $this->setScColumnsetId($this->getMappedValue($row, 'scColumnsetId') ?? $this->scColumnsetId ?? null);
+        $this->scAddContainer = $this->getMappedValue($row, 'scAddContainer') ?? $this->scAddContainer;
         return $this;
     }
 
@@ -182,6 +229,12 @@ class ColsetElementDTO
 
     public function isValid(): bool
     {
-        return $this->id and $this->type and $this->scType || $this->identifier;
+        return (
+            $this->id
+            and $this->pid
+            and $this->type
+            and $this->scParent
+            and $this->scType || $this->identifier
+        );
     }
 }

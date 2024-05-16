@@ -32,7 +32,11 @@ class TemplateManager extends AbstractManager
             throw new \Exception("Could not create template target directory: \"$target\"");
         }
 
-        $wrappedClasses = [0 => []];
+        $wrappedClasses = [
+            0 => [],  // default for no outer class
+            'container' => []  // default for container outer class
+        ];
+
         foreach ($colSets as $colSet)
         {
             $outsideClass = $colSet->getUseOutside() ? $colSet->getOutsideClass() ?: 0 : 0;
@@ -57,6 +61,14 @@ class TemplateManager extends AbstractManager
                 $outerClass = null;
             }
 
+            if (empty($innerClasses)) {
+                $copied = \array_merge(
+                    $copied,
+                    $this->copyTemplates($source, $target, $outerClass)
+                );
+                continue;
+            }
+
             foreach (\array_unique($innerClasses) as $innerClass)
             {
                 $copied = \array_merge(
@@ -76,6 +88,7 @@ class TemplateManager extends AbstractManager
      * @param string|null $innerClass The inner class name.
      * @param array $replace The keys to replace in the template content and source file name.
      * @return array The copied files.
+     * @throws MigrationException
      */
     protected function copyTemplates(
         string $sourceDir,
@@ -85,11 +98,11 @@ class TemplateManager extends AbstractManager
         array  $replace = []
     ): array {
         if (!\is_dir($sourceDir)) {
-            throw new \RuntimeException('Template source directory not found. Please reinstall the bundle.');
+            throw new MigrationException('Template source directory not found. Please reinstall the bundle.');
         }
 
         if (!\is_dir($targetDir)) {
-            throw new \RuntimeException('Template target directory not found.');
+            throw new MigrationException("Template target directory not found: \"$targetDir\".");
         }
 
         $rx = "/ce_bs_gridS(tart|eparator|top)_.+/";
@@ -119,9 +132,9 @@ class TemplateManager extends AbstractManager
 
             $sourceFile = $sourceDir . \DIRECTORY_SEPARATOR . $file;
 
-            if ($this->copyTemplateFile($sourceFile, $destination, $file, $search, $replace) === false)
+            if (null === $this->copyTemplateFile($sourceFile, $destination, $file, $search, $replace))
             {
-                throw new \RuntimeException('Could not copy template file.');
+                throw new MigrationException("Could not copy template file \"$sourceFile\" to \"$destination\".");
             }
 
             $copied[] = $destination;
@@ -136,7 +149,7 @@ class TemplateManager extends AbstractManager
      * @param string $cacheKey The cache key for the template content.
      * @param array $search The keys to replace in the template content.
      * @param array $replace The values to replace the keys with.
-     * @return false|int The number of bytes written to the file, or false on failure.
+     * @return null|int The number of bytes written to the file, or null on failure.
      */
     protected function copyTemplateFile(
         string $source,
@@ -144,7 +157,7 @@ class TemplateManager extends AbstractManager
         string $cacheKey,
         array  $search,
         array  $replace
-    ) {
+    ): ?int {
         if (\in_array($cacheKey, \array_keys($this->templateCache), true))
         {
             $content = $this->templateCache[$cacheKey];
@@ -155,7 +168,9 @@ class TemplateManager extends AbstractManager
             $this->templateCache[$cacheKey] = $content;
         }
 
-        return \file_put_contents($target, \str_replace($search, $replace, $content));
+        $written = \file_put_contents($target, \str_replace($search, $replace, $content));
+
+        return $written !== false ? $written : null;
     }
 
     /**
@@ -172,7 +187,9 @@ class TemplateManager extends AbstractManager
             );
         }
 
-        $outerClass = $def->getUseOutside() ? $def->getOutsideClass() : null;
+        $outerClass = $ce->getScAddContainer()
+            ? 'container'
+            : ($def->getUseOutside() ? $def->getOutsideClass() : null);
 
         $innerClass = null;
         if ($def->getUseInside())
@@ -198,13 +215,17 @@ class TemplateManager extends AbstractManager
         $type = Constants::RENAME_TYPE[$ce->getType()] ?? $ce->getType();
 
         $vars = [];
-        if ($outerClass) { $vars[] = self::classNamesToFileNamePart($outerClass, true); }
-        if ($innerClass) { $vars[] = self::classNamesToFileNamePart($innerClass, false); }
+        if ($outerClass) { $vars[] = self::classNamesToFileNamePart($outerClass, self::PREFIX_OUTER); }
+        if ($innerClass) { $vars[] = self::classNamesToFileNamePart($innerClass, self::PREFIX_INNER); }
 
-        return "ce_{$type}_" . \implode('_', $vars);
+        if (empty($vars)) {
+            return null;
+        }
+
+        return \sprintf('ce_%s_%s.html5', $type, \implode('_', $vars));
     }
 
-    public static function classNamesToFileNamePart(?string $classes, string $prefix = ''): string
+    public static function classNamesToFileNamePart(?string $classes, string $prefix): string
     {
         $classPart = (string) \preg_replace('/[^a-z0-9-_ ]/i', '', (string) $classes);
         $classPart = \str_replace(' ', '_', $classPart);

@@ -13,10 +13,11 @@ use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use Symfony\Component\Console\Style\SymfonyStyle;
-use Throwable;
 
 abstract class AbstractAlchemist extends AbstractManager
 {
+    protected array $mapParentColumnsetId = [];
+
     public const NAME = 'alchemist';
 
     public function getName(): string {
@@ -37,23 +38,37 @@ abstract class AbstractAlchemist extends AbstractManager
 
     public abstract function getFormFields(MigrationConfig $config): array;
 
+    /**
+     * @throws MigrationException
+     */
     protected abstract function identifierFromColsetElementDTO(MigrationConfig $config, ColsetElementDTO $dto): string;
 
     /**
-     * @throws Throwable
-     * @throws DBALException
+     * @throws DBALDBALException|DBALDriverException|DBALException
+     * @throws MigrationException
      */
     public function transform(SymfonyStyle $io, MigrationConfig $config)
     {
+        $io->section("Migration of {$this->getName()} content elements and form fields");
+
+        if (!$io->confirm("Transform {$this->getName()} content elements and form fields now?"))
+        {
+            $io->note("Skipping transformation of {$this->getName()} content elements and form fields.");
+            return;
+        }
+
         $io->text("Checking for {$this->getName()} content elements.");
         if ($this->checkIfContentElementsExist())
         {
             $io->text("Migrating {$this->getName()} content elements.");
 
             $contentElements = $this->getContentElements($config);
+            $count = \count($contentElements);
+            $io->info("Found $count {$this->getName()} content elements.");
+
             $this->transformColsetElements($contentElements);
 
-            $io->success("Migrated {$this->getName()} content elements successfully.");
+            $io->success("Migrated $count {$this->getName()} content elements successfully.");
         }
         else
         {
@@ -66,9 +81,12 @@ abstract class AbstractAlchemist extends AbstractManager
             $io->text("Migrating {$this->getName()} form fields.");
 
             $formFields = $this->getFormFields($config);
+            $count = \count($formFields);
+            $io->info("Found $count {$this->getName()} form fields.");
+
             $this->transformColsetElements($formFields);
 
-            $io->success("Migrated {$this->getName()} form fields successfully.");
+            $io->success("Migrated $count {$this->getName()} form fields successfully.");
         }
         else
         {
@@ -79,14 +97,15 @@ abstract class AbstractAlchemist extends AbstractManager
     /**
      * @return array<int, ColsetElementDTO[]> A map of parent IDs to their respective colset element data transfer
      *   objects, that may either represent content elements or form fields.
-     * @throws MigrationException
+     *
      * @throws DBALException
+     * @throws MigrationException
      */
     protected function dbResult2colsetElementDTOs(
         MigrationConfig $config,
         Result          $rows,
-        ?array          $columnsMap = null,
-        ?string         $table = null
+        string          $table,
+        ?array          $columnsMap = null
     ): array {
         /** @var array<int, ColsetElementDTO[]> $contentElements */
         $contentElements = [];
@@ -94,15 +113,28 @@ abstract class AbstractAlchemist extends AbstractManager
         while ($row = $rows->fetchAssociative())
         {
             $ce = ColsetElementDTO::fromRow($row, $columnsMap);
-            if ($table !== null) {
-                $ce->setTable($table);
-            }
+            $ce->setTable($table);
 
-            if (!$ce->isValid()) {
+            if (!$ce->isValid())
+            {
+                $config->addNote(
+                    "Could not identify entity $table.id={$ce->getId()}. "
+                    . "One or more database entries in $table might be corrupt."
+                );
                 continue;
             }
 
-            $identifier = $this->identifierFromColsetElementDTO($config, $ce);
+            try
+            {
+                $identifier = $this->identifierFromColsetElementDTO($config, $ce);
+            }
+            catch (MigrationException $e)
+            {
+                throw new MigrationException(
+                    "Could not identify entity $table.id={$ce->getId()}. "
+                    . $e->getMessage()
+                );
+            }
 
             if (!$identifier) {
                 throw new MigrationException(
@@ -133,7 +165,8 @@ abstract class AbstractAlchemist extends AbstractManager
 
     /**
      * @param array<int, ColsetElementDTO[]> $colsetElements
-     * @throws DBALException|\Exception
+     * @throws DBALDBALException|DBALDriverException|DBALException
+     * @throws MigrationException
      */
     protected function transformColsetElements(array $colsetElements): void
     {
@@ -150,16 +183,21 @@ abstract class AbstractAlchemist extends AbstractManager
     /**
      * @param int $parentId
      * @param ColsetElementDTO[] $ceDTOs
+     * @throws DBALDBALException|DBALDriverException|DBALException
      * @throws MigrationException
      */
     protected function transformColsetIntoGrid(int $parentId, array $ceDTOs): void
     {
+        if (empty($ceDTOs)) return;
+
+        $scColumnsetSelect = $this->dbColumnExists('tl_content', 'sc_columnset') ? ', sc_columnset' : '';
+
         $errMsg = <<<MSG
         
         Please check manually and re-run the migration.
             
         SELECT `id`, `type`, `pid`, `ptable`, `sorting`, `tstamp`, `sc_sortid`, `sc_childs`,
-               `sc_parent`, `sc_type`, `sc_name`, `sc_columnset` FROM `tl_content`
+               `sc_parent`, `sc_type`, `sc_name`$scColumnsetSelect FROM `tl_content`
         WHERE `sc_parent`="$parentId" AND `type` LIKE "colset%" OR `type` LIKE "formcol%"
         ORDER BY type DESC, id ASC;
         MSG;
@@ -250,7 +288,7 @@ abstract class AbstractAlchemist extends AbstractManager
         $placeholders = [];
         foreach ($childIds as $index => $childId)
             // necessary for parameter binding,
-            // because DBAL does not allow mixing named and positional parameters
+            // as DBAL does not allow mixing named and positional parameters
         {
             $placeholders[] = ':child_' . $index;
         }

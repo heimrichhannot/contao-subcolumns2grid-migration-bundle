@@ -2,6 +2,7 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
+use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
@@ -17,6 +18,10 @@ abstract class AbstractMigrationManager extends AbstractManager
         return $this::LANG_SUBJECT;
     }
 
+    /**
+     * @param MigrationConfig $config
+     * @return ColsetDefinition[]
+     */
     protected abstract function getMigrationColumnSets(MigrationConfig $config): array;
 
     protected abstract function setMigrationColumnSets(MigrationConfig $config, array $columnSets): void;
@@ -87,8 +92,8 @@ abstract class AbstractMigrationManager extends AbstractManager
     }
 
     /**
-     * @throws DBALException
-     * @throws \Random\RandomException
+     * @throws DBALException|DBALDriverException
+     * @throws \Exception|\Random\RandomException
      */
     protected final function migrateSubcolumnDefinitions(MigrationConfig $config): array
     {

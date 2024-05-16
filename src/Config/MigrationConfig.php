@@ -32,6 +32,7 @@ class MigrationConfig
     protected int $parentThemeId;
     /** @var array<string, ColsetDefinition> */
     protected array $globalSubcolumnDefinitions = [];
+    /** @var array<string, ColsetDefinition> */
     protected array $dbSubcolumnDefinitions = [];
     protected array $migratedIdentifiers = [];
     /** @var string[] $notes */
@@ -181,6 +182,7 @@ class MigrationConfig
         return $this;
     }
 
+    /** @return array<string, ColsetDefinition> */
     public function getDBSubcolumnDefinitions(): array
     {
         return $this->dbSubcolumnDefinitions;

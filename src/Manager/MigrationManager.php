@@ -28,7 +28,6 @@ class MigrationManager extends AbstractManager
 
     /**
      * @throws Throwable
-     * @throws DBALException
      */
     public function migrate(SymfonyStyle $io, MigrationConfig $config): bool
     {
@@ -45,12 +44,20 @@ class MigrationManager extends AbstractManager
         if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
         {
             $this->globalsManager()->migrate($io, $config);
-            $this->moduleAlchemist()->transform($io, $config);
         }
 
         if ($config->hasSource(MigrationConfig::SOURCE_DB))
         {
             $this->dbManager()->migrate($io, $config);
+        }
+
+        if ($config->hasSource(MigrationConfig::SOURCE_GLOBALS))
+        {
+            $this->moduleAlchemist()->transform($io, $config);
+        }
+
+        if ($config->hasSource(MigrationConfig::SOURCE_DB))
+        {
             $this->bundleAlchemist()->transform($io, $config);
         }
 
