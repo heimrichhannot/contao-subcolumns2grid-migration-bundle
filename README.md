@@ -62,7 +62,7 @@ For example:
 vendor/bin/contao-console sub2grid:migrate -f b -g 3 -t 0 --dry-run
 ```
 
-To see all the available options, run the command with the `--help` option:
+To see all available options, run the command with `--help`:
 
 ```bash
 vendor/bin/contao-console sub2grid:migrate --help
@@ -71,17 +71,17 @@ vendor/bin/contao-console sub2grid:migrate --help
 
 ### Rolling back
 
-If you want to roll back the migration, you can use the following command:
+If you want to roll back the migration, use the following command:
 
 ```bash
 vendor/bin/contao-console sub2grid:rollback
 ```
 
 This command will prompt you to choose whether to reset the types of the migrated content elements and/or form fields,
-whether to reset their customTpl settings that have been overwritten during the migration, and whether to remove
+whether to reset their `customTpl` settings that have been overwritten during the migration, and whether to remove
 previously migrated grid definitions.
 
-To run a full rollback and skip any prompts, you can use the `-n` option:
+To run a full rollback and skip all prompts, provide the `-n` option:
 
 ```bash
 vendor/bin/contao-console sub2grid:rollback -n
