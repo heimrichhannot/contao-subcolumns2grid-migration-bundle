@@ -189,15 +189,11 @@ class MigrateSubcolumnsCommand extends Command
             return false;
         }
 
-        $this->connection->executeStatement('CREATE TABLE IF NOT EXISTS `tl_s2g_transaction_test` (`id` INT PRIMARY KEY)');
-
-        $this->connection->beginTransaction();
-        $this->connection->executeStatement('INSERT INTO `tl_s2g_transaction_test` (`id`) VALUES (1)');
-        $this->connection->rollBack();
-
-        $supportsTransactions = $this->connection->executeQuery('SELECT COUNT(*) FROM `tl_s2g_transaction_test`')->fetchOne() === 0;
-
-        $this->connection->executeStatement('DROP TABLE `tl_s2g_transaction_test`');
+        $supportsTransactions = (
+            $this->testTransactionAbility('tl_content', 'type')
+            && $this->testTransactionAbility('tl_form_field', 'type')
+            && $this->testTransactionAbility('tl_bs_grid', 'title')
+        );
 
         if (!$supportsTransactions) {
             throw new ConfigException('The database does not support transactions. Cannot run in dry-run mode.');
@@ -206,6 +202,38 @@ class MigrateSubcolumnsCommand extends Command
         $io->warning('Running in dry-run mode. No changes will be made to the database.');
 
         return true;
+    }
+
+    /**
+     * @param mixed $payload
+     * @throws Throwable
+     */
+    protected function testTransactionAbility(string $table, string $column, $payload = 's2g_transaction_test'): bool
+    {
+        if (\method_exists($dbPlattform = $this->connection->getDatabasePlatform(), 'supportsTransactions')
+            && !$dbPlattform->supportsTransactions())
+        {
+            return false;
+        }
+
+        try
+        {
+            $this->connection->beginTransaction();
+            $this->connection->executeStatement("INSERT INTO `$table` (`$column`) VALUES (\"$payload\")");
+            $this->connection->rollBack();
+
+            return 0 === $this->connection
+                    ->executeQuery("SELECT COUNT(*) FROM `$table` WHERE `$column`=\"$payload\"")
+                    ->fetchOne();
+        }
+        catch (DBALException $e)
+        {
+            return false;
+        }
+        finally
+        {
+            $this->connection->executeStatement("DELETE FROM `$table` WHERE `$column`=\"$payload\" LIMIT 1");
+        }
     }
 
     protected function printNotes(SymfonyStyle $io, MigrationConfig $config)
