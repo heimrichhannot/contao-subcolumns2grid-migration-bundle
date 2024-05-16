@@ -210,7 +210,7 @@ abstract class AbstractAlchemist extends AbstractManager
         ORDER BY type DESC, id ASC;
         MSG;
 
-        if (empty($ceDTOs) || \count($ceDTOs) < 2) {
+        if (\count($ceDTOs) < 2) {
             throw new MigrationException("Not enough content elements found for colset to be valid." . $errMsg);
         }
 
@@ -224,8 +224,10 @@ abstract class AbstractAlchemist extends AbstractManager
         $parts = [];
         $stop = null;
 
-        foreach ($ceDTOs as $ce) {
-            switch ($ce->getType()) {
+        foreach ($ceDTOs as $ce)
+        {
+            switch ($ce->getType())
+            {
                 case Constants::CE_TYPE_COLSET_START:
                 case Constants::FF_TYPE_FORMCOL_START:
                     if ($ce->getId() !== $parentId) {
@@ -238,10 +240,12 @@ abstract class AbstractAlchemist extends AbstractManager
                     }
                     $start = $ce;
                     break;
+
                 case Constants::CE_TYPE_COLSET_PART:
                 case Constants::FF_TYPE_FORMCOL_PART:
                     $parts[] = $ce;
                     break;
+
                 case Constants::CE_TYPE_COLSET_END:
                 case Constants::FF_TYPE_FORMCOL_END:
                     if ($stop !== null) {
@@ -249,6 +253,7 @@ abstract class AbstractAlchemist extends AbstractManager
                     }
                     $stop = $ce;
                     break;
+
                 default:
                     throw new MigrationException('Invalid content element type found for sub-column set.' . $errMsg);
             }

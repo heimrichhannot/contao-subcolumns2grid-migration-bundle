@@ -33,8 +33,9 @@ class TemplateManager extends AbstractManager
         }
 
         $wrappedClasses = [
-            0 => [],  // default for no outer class
-            'container' => []  // default for container outer class
+            0 => [],           // default for no outer container
+            'container' => []  // default for outer container with class container,
+                               //   which always has to be created, because addContainer is a thing
         ];
 
         foreach ($colSets as $colSet)
@@ -61,7 +62,8 @@ class TemplateManager extends AbstractManager
                 $outerClass = null;
             }
 
-            if (empty($innerClasses)) {
+            if ($outerClass && empty($innerClasses))
+            {
                 $copied = \array_merge(
                     $copied,
                     $this->copyTemplates($source, $target, $outerClass)
@@ -221,15 +223,15 @@ class TemplateManager extends AbstractManager
 
         $type = Constants::RENAME_TYPE[$ce->getType()] ?? $ce->getType();
 
-        $vars = [];
-        if ($outerClass) { $vars[] = self::classNamesToFileNamePart($outerClass, self::PREFIX_OUTER); }
-        if ($innerClass) { $vars[] = self::classNamesToFileNamePart($innerClass, self::PREFIX_INNER); }
+        $parts = [];
+        if ($outerClass) { $parts[] = self::classNamesToFileNamePart($outerClass, self::PREFIX_OUTER); }
+        if ($innerClass) { $parts[] = self::classNamesToFileNamePart($innerClass, self::PREFIX_INNER); }
 
-        if (empty($vars)) {
+        if (empty($parts)) {
             return null;
         }
 
-        return \sprintf('ce_%s_%s', $type, \implode('_', $vars));
+        return \sprintf('ce_%s_%s', $type, \implode('_', $parts));
     }
 
     public static function classNamesToFileNamePart(?string $classes, string $prefix): string

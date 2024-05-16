@@ -15,16 +15,14 @@ to your choice of
 - PHP 7.4 or higher
 - Either version 2 or 3 of `contao-bootstrap/grid` installed
 - Contao database migrations must be up-to-date
-- If you were using the [subcolumns bootstrap bundle](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle) prior to the migration,
-  **you must update and migrate to version [1.13@beta](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle/tree/feature/set_selection)** before running this migration.
-
-> [!NOTE]
-> Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
-> although it does not hurt if they are, provided you are running Contao 4.13.
 
 > [!CAUTION]
 > You may also run the migration on Contao 5 with none of the subcolumns packages installed.
 > Just make sure to run the **Contao migration WITHOUT deletes** prior to this migration.
+
+> [!NOTE]
+> Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
+> although it does not hurt if they are.
 
 
 ## Installation
@@ -46,8 +44,11 @@ Run the migration via the CLI wizard:
 vendor/bin/contao-console sub2grid:migrate
 ```
 
-Or use the provided options to skip the wizard.
+The migration must obtain some information on the environment and your intents.
+An attempt is made to automatically obtain information that can be inferred.
+Non-inferable details will be queried interactively by the wizard.
 
+You may also provide all non-inferable options to skip the wizard.
 
 #### Most common options
 
