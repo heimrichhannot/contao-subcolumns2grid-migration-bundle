@@ -109,6 +109,7 @@ abstract class AbstractAlchemist extends AbstractManager
     ): array {
         /** @var array<int, ColsetElementDTO[]> $contentElements */
         $contentElements = [];
+        $parentElements = [];
 
         while ($row = $rows->fetchAssociative())
         {
@@ -146,12 +147,19 @@ abstract class AbstractAlchemist extends AbstractManager
             $ce->setIdentifier($identifier);
 
             $contentElements[$ce->getScParent()][] = $ce;
+
+            if ($ce->getType() === Constants::CE_TYPE_COLSET_START || $ce->getType() === Constants::FF_TYPE_FORMCOL_START)
+            {
+                $parentElements[$ce->getId()] = $ce;
+            }
         }
 
         foreach ($contentElements as $scParentId => $ces)
         {
             foreach ($ces as $ce)
             {
+                $ce->setStartDTO($parentElements[$scParentId] ?? null);
+
                 if (!$ce->getCustomTpl())
                 {
                     $customTpl = $this->templateManager()->findColumnTemplate($config, $ce);

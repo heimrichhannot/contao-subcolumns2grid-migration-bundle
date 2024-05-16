@@ -187,7 +187,14 @@ class TemplateManager extends AbstractManager
             );
         }
 
-        $outerClass = $ce->getScAddContainer()
+        if (!$ce->getStartDTO()) {
+            throw new MigrationException(
+                "No column start element found for sub-column element with ID {$ce->getId()}. "
+                . "One or more database entries in tl_content or tl_form_field might be corrupt."
+            );
+        }
+
+        $outerClass = $ce->getStartDTO()->getScAddContainer()
             ? 'container'
             : ($def->getUseOutside() ? $def->getOutsideClass() : null);
 
@@ -222,7 +229,7 @@ class TemplateManager extends AbstractManager
             return null;
         }
 
-        return \sprintf('ce_%s_%s.html5', $type, \implode('_', $vars));
+        return \sprintf('ce_%s_%s', $type, \implode('_', $vars));
     }
 
     public static function classNamesToFileNamePart(?string $classes, string $prefix): string

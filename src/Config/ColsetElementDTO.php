@@ -38,6 +38,7 @@ class ColsetElementDTO
     protected string $customTpl = "";
     protected array $columnsMap = self::DEFAULT_COLUMNS_MAP;
     protected string $table = 'tl_content';
+    protected ?ColsetElementDTO $startDTO = null;
 
     public function getId(): int
     {
@@ -197,6 +198,17 @@ class ColsetElementDTO
     public function setTable(string $table): self
     {
         $this->table = $table;
+        return $this;
+    }
+
+    public function getStartDTO(): ?ColsetElementDTO
+    {
+        return $this->startDTO;
+    }
+
+    public function setStartDTO(ColsetElementDTO $startDTO): self
+    {
+        $this->startDTO = $startDTO;
         return $this;
     }
 
