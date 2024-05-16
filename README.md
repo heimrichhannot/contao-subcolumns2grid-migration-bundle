@@ -2,7 +2,7 @@
 
 This bundle aids in migrating from either one of
 - [`heimrichhannot/subcolumns`](https://github.com/heimrichhannot/contao-subcolumns)
-- [`heimrichhannot/contao-subcolumns-bootstrap-bundle`](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle) (migration currently in development)
+- [`heimrichhannot/contao-subcolumns-bootstrap-bundle`](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle)
 
 to your choice of
 - [`contao-bootstrap/grid:^2.0`](https://github.com/contao-bootstrap/grid)
