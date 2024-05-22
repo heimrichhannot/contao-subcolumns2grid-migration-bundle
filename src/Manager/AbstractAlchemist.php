@@ -156,9 +156,14 @@ abstract class AbstractAlchemist extends AbstractManager
 
         foreach ($contentElements as $scParentId => $ces)
         {
+            if (!($startDTO = $parentElements[$scParentId] ?? null))
+            {
+                continue;
+            }
+
             foreach ($ces as $ce)
             {
-                $ce->setStartDTO($parentElements[$scParentId] ?? null);
+                $ce->setStartDTO($startDTO);
 
                 if (!$ce->getCustomTpl())
                 {
