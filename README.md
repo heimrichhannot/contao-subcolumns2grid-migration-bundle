@@ -35,6 +35,12 @@ composer require heimrichhannot/contao-subcolumns2grid-migration-bundle:dev-trun
 
 ## Usage
 
+###### Commands Index
+
+- [Migrating](#migrating)
+- [Rolling back](#rolling-back)
+- [Fixing corrupt Subcolumns](#fixing-corrupt-subcolumns)
+
 ### Migrating
 
 Run the migration via the CLI wizard:
