@@ -544,7 +544,7 @@ class MigrateSubcolumnsCommand extends Command
      */
     protected static function initParentThemeId(InputInterface $input, SymfonyStyle $io): int
     {
-        $parentThemeId = $input->getOption('parent-theme');  // caution: can be "0"
+        $parentThemeId = $input->getOption('theme');  // caution: can be "0"
         if ($parentThemeId !== null && \is_numeric($parentThemeId = \ltrim($parentThemeId, ' :='))) {
             return (int) $parentThemeId;
         }
