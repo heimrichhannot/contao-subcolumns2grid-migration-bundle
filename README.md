@@ -17,12 +17,8 @@ to your choice of
 - Contao database migrations must be up-to-date
 
 > [!CAUTION]
-> You may also run the migration on Contao 5 with none of the subcolumns packages installed.
-> Just make sure to run the **Contao migration WITHOUT deletes** prior to this migration.
-
-> [!NOTE]
-> Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
-> although it does not hurt if they are.
+> You may also run the migration with none of the subcolumns packages installed, i.e. on Contao 5.
+> Just make sure to run the <ins>**Contao migration WITHOUT deletes**</ins> prior to this migration. 
 
 > [!TIP]
 > Run the [fix command](#fixing-corrupt-subcolumns) before migrating to ensure that all subcolumns are in a consistent state.
