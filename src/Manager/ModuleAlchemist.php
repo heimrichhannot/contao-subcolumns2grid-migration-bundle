@@ -23,10 +23,10 @@ class ModuleAlchemist extends AbstractAlchemist
             ? 'AND sc_columnset = ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
-            SELECT id, type, customTpl, sc_childs, sc_parent, sc_type, sc_name, sc_sortid
+            SELECT id, type, pid, sorting, customTpl, sc_childs, sc_parent, sc_type, sc_name, sc_sortid
               FROM tl_content
              WHERE type LIKE "colset%"
-             ORDER BY sc_parent, sc_sortid
+             ORDER BY sc_parent, sorting
                $sqlScColumnsetEmpty
         SQL);
         $result = $stmt->executeQuery();

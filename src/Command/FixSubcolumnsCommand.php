@@ -188,7 +188,8 @@ class FixSubcolumnsCommand extends Command
         $currentParentTable = $overrideParentTable;
         $currentParentId = null;
 
-        $currentSetIndex = -1;
+        $currentSetNestingLevel = -1;
+        $nestedStartIds = [];
 
         while ($row = $result->fetchAssociative())
         {
@@ -219,12 +220,17 @@ class FixSubcolumnsCommand extends Command
 
                     unset($collector[$currentParentTable][$currentParentId]);
 
-                    $currentSetIndex = -1;
+                    $currentSetNestingLevel = -1;
+                    $nestedStartIds = [];
                 }
 
                 // start a new parent
                 $currentParentId = $row['pid'];
                 $collector[$currentParentTable][$currentParentId] = [];
+            }
+
+            if ($currentParentId == 28) {
+                $x = 1;
             }
 
             $this->progress->setMessage(\sprintf(
@@ -237,18 +243,19 @@ class FixSubcolumnsCommand extends Command
 
             if ($row['type'] === Constants::CE_TYPE_COLSET_START)
             {
-                $currentSetIndex++;
+                $currentSetNestingLevel++;
+                $nestedStartIds[$currentSetNestingLevel] = $row['id'];
             }
 
-            $collector[$currentParentTable][$currentParentId][$currentSetIndex] ??= [];
-            $collector[$currentParentTable][$currentParentId][$currentSetIndex][] = $row;
+            $nearestStartId = $nestedStartIds[$currentSetNestingLevel] ?? null;
+
+            $collector[$currentParentTable][$currentParentId][$nearestStartId] ??= [];
+            $collector[$currentParentTable][$currentParentId][$nearestStartId][] = $row;
 
             if ($row['type'] === Constants::CE_TYPE_COLSET_END)
             {
-                $currentSetIndex--;
+                $currentSetNestingLevel--;
             }
-
-            \usleep(500);
 
             $this->progress->advance();
         }

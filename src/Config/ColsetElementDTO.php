@@ -146,12 +146,7 @@ class ColsetElementDTO
 
     public function setScColumnsetId($scColumnsetId): self
     {
-        if (empty($scColumnsetId)) {
-            $scColumnsetId = null;
-        } elseif (!\is_int($scColumnsetId)) {
-            $scColumnsetId = (int) $scColumnsetId;
-        }
-        $this->scColumnsetId = $scColumnsetId;
+        $this->scColumnsetId = empty($scColumnsetId) ? null : (int) $scColumnsetId;
         return $this;
     }
 
