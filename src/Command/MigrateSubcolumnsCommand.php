@@ -78,13 +78,7 @@ class MigrateSubcolumnsCommand extends Command
                 'The source to migrate from. Can be "m" for the SubColumns module or "b" for the SubColumnsBootstrapBundle.'
             )
             ->addOption(
-                'skip-confirmations',
-                'y',
-                InputOption::VALUE_NONE,
-                'Skip all confirmations and proceed with the migration.'
-            )
-            ->addOption(
-                'parent-theme',
+                'theme',
                 't',
                 InputOption::VALUE_REQUIRED,
                 'The parent theme id to assign the new grid columns to. May be 0 to create a new layout.'
