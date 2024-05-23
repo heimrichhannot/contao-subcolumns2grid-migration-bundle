@@ -105,7 +105,7 @@ You may provide the `--dry-run` option to perform a dry run without committing c
 Provide the `--cleanse`|`-c` option to remove all subcolumn content elements and form fields that pose incomplete start&mdash;parts&mdash;end series AND that are turned invisible. In case of doubt, run the command without this option first.
 
 > [!NOTE]
-> The command will always throw an error if it detects any incomplete subcolumn content element series that are visible.
+> The command will always throw an error if it detects any incomplete subcolumn content element series that are visible. You will have to investigate and fix these manually.
 
 
 ## Aftermath
