@@ -88,6 +88,27 @@ vendor/bin/contao-console sub2grid:rollback -n
 ```
 
 
+### Fixing corrupt Subcolumns
+
+If you have been using the SubcolumnsBootstrapBundle prior to version 1.12 or the Subcolumns module, you may encounter issues with corrupt subcolumns.
+These issues may manifest as missing subcolumn content elements and form fields, or as such elements that are not properly linked to their subcolumn start element.
+
+These issues arose due to a bug in the SubcolumnsBootstrapBundle prior to version 1.12 and the Subcolumns module, which caused the wrong `sc_parent` IDs to be inherited upon cloning subcolumn content elements and form fields.
+
+Run the following command to attempt to fix these issues:
+
+```bash
+vendor/bin/contao-console sub2grid:fix
+```
+
+You may provide the `--dry-run` option to perform a dry run without committing changes to the database.
+
+Provide the `--cleanse`|`-c` option to remove all subcolumn content elements and form fields that pose incomplete start&mdash;part&mdash;end series AND that are turned invisible. In case of doubt, run the command without this option first.
+
+> [!NOTE]
+> The command will always throw an error if it detects any incomplete subcolumn content element series that are visible.
+
+
 ## Aftermath
 
 After the migration, you should check the affected pages and modules for any issues.
