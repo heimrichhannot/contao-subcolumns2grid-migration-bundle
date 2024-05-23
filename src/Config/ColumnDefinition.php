@@ -41,7 +41,7 @@ class ColumnDefinition implements \Serializable
 
     public function setOffset(?string $offset): self
     {
-        $this->offset = $offset;
+        $this->offset = \preg_replace('/\D+/', '', $offset);
         return $this;
     }
 
@@ -52,7 +52,7 @@ class ColumnDefinition implements \Serializable
 
     public function setOrder(?string $order): self
     {
-        $this->order = $order;
+        $this->order = \preg_replace('/\D+/', '', $order);
         return $this;
     }
 
@@ -109,12 +109,12 @@ class ColumnDefinition implements \Serializable
     public function asArray(): array
     {
         return [
-            'width'  => (string) $this->span,
-            'offset' => (string) $this->offset,
-            'order'  => (string) $this->order,
-            'align'  => (string) $this->verticalAlign,
-            'class'  => (string) $this->customClasses,
-            'reset'  => (string) $this->reset,
+            'width'  => (string) $this->getSpan(),
+            'offset' => (string) $this->getOffset(),
+            'order'  => (string) $this->getOrder(),
+            'align'  => (string) $this->getVerticalAlign(),
+            'class'  => (string) $this->getCustomClasses(),
+            'reset'  => (string) $this->getReset(),
         ];
     }
 
@@ -127,8 +127,8 @@ class ColumnDefinition implements \Serializable
     {
         $arr = StringUtil::deserialize($data);
         $this->setSpan($arr['width'] ?? null);
-        $this->setOffset($arr['offset'] ?? null);
-        $this->setOrder($arr['order'] ?? null);
+        $this->setOffset(\str_replace('offset-', '', $arr['offset'] ?? null));
+        $this->setOrder(\str_replace('order-', '', $arr['order'] ?? null));
         $this->setVerticalAlign($arr['align'] ?? null);
         $this->setCustomClasses($arr['class'] ?? null);
         $this->setReset($arr['reset'] ?? null);
