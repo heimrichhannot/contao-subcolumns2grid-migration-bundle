@@ -47,13 +47,17 @@ class MigrateSubcolumnsCommand extends Command
 {
     protected Connection $connection;
     protected ContaoFramework $framework;
+    protected Helper $helper;
     protected KernelInterface $kernel;
     protected MigrationManager $migrationManager;
     protected ParameterBagInterface $parameterBag;
 
+    protected $dryRun = false;
+
     public function __construct(
         Connection            $connection,
         ContaoFramework       $framework,
+        Helper                $helper,
         KernelInterface       $kernel,
         MigrationManager      $migrationManager,
         ParameterBagInterface $parameterBag,
@@ -61,6 +65,7 @@ class MigrateSubcolumnsCommand extends Command
     ) {
         $this->connection = $connection;
         $this->framework = $framework;
+        $this->helper = $helper;
         $this->kernel = $kernel;
         $this->migrationManager = $migrationManager;
         $this->parameterBag = $parameterBag;
@@ -126,7 +131,14 @@ class MigrateSubcolumnsCommand extends Command
         {
             $this->loadGridBundle($io);
 
-            $isDryRun = $this->initDryRun($input, $io);
+            $this->dryRun = $this->helper->initDryRun(
+                (bool) $input->getOption('dry-run') ?? false,
+                Helper::TEST_TL_CONTENT + Helper::TEST_TL_FORM_FIELD + Helper::TEST_TL_BS_GRID
+            );
+
+            if ($this->dryRun) {
+                $io->warning('Running in dry-run mode. No changes will be made to the database.');
+            }
 
             $migrationConfig = $this->createMigrationConfig($input, $io);
 
@@ -143,13 +155,13 @@ class MigrateSubcolumnsCommand extends Command
                 throw $t;
             }
 
-            $isDryRun
+            $this->dryRun
                 ? $this->connection->rollBack()
                 : $this->connection->commit();
 
             $this->printNotes($io, $migrationConfig);
 
-            $io->success($isDryRun
+            $io->success($this->dryRun
                 ? 'Migration dry run completed successfully. No changes were made.'
                 : 'Migration completed successfully.'
             );
@@ -170,63 +182,6 @@ class MigrateSubcolumnsCommand extends Command
             $io->error($e->getMessage());
             $io->getErrorStyle()->block($e->getTraceAsString());
             return Command::FAILURE;
-        }
-    }
-
-    /**
-     * @throws ConfigException|Throwable
-     */
-    protected function initDryRun(InputInterface $input, SymfonyStyle $io): bool
-    {
-        if (!($input->getOption('dry-run') ?? false))
-        {
-            return false;
-        }
-
-        $supportsTransactions = (
-            $this->testTransactionAbility('tl_content', 'type')
-            && $this->testTransactionAbility('tl_form_field', 'type')
-            && $this->testTransactionAbility('tl_bs_grid', 'title')
-        );
-
-        if (!$supportsTransactions) {
-            throw new ConfigException('The database does not support transactions. Cannot run in dry-run mode.');
-        }
-
-        $io->warning('Running in dry-run mode. No changes will be made to the database.');
-
-        return true;
-    }
-
-    /**
-     * @param mixed $payload
-     * @throws Throwable
-     */
-    protected function testTransactionAbility(string $table, string $column, $payload = 's2g_transaction_test'): bool
-    {
-        if (\method_exists($dbPlattform = $this->connection->getDatabasePlatform(), 'supportsTransactions')
-            && !$dbPlattform->supportsTransactions())
-        {
-            return false;
-        }
-
-        try
-        {
-            $this->connection->beginTransaction();
-            $this->connection->executeStatement("INSERT INTO `$table` (`$column`) VALUES (\"$payload\")");
-            $this->connection->rollBack();
-
-            return 0 === $this->connection
-                    ->executeQuery("SELECT COUNT(*) FROM `$table` WHERE `$column`=\"$payload\"")
-                    ->fetchOne();
-        }
-        catch (DBALException $e)
-        {
-            return false;
-        }
-        finally
-        {
-            $this->connection->executeStatement("DELETE FROM `$table` WHERE `$column`=\"$payload\" LIMIT 1");
         }
     }
 
@@ -329,14 +284,6 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException
-     */
-    protected function dbColumnExists(string $table, string $column): bool
-    {
-        return Helper::dbColumnExists($this->connection, $table, $column);
-    }
-
-    /**
      * @throws DBALDriverException|DBALDBALException|DBALException
      * @throws ConfigException
      */
@@ -377,7 +324,7 @@ class MigrateSubcolumnsCommand extends Command
                 $config->addSource(MigrationConfig::SOURCE_DB);
 
                 $needFetchGlobals = function (string $table, array $types) {
-                    if (!$this->dbColumnExists($table, 'sc_columnset')) {
+                    if (!$this->helper->dbColumnExists($table, 'sc_columnset')) {
                         return false;
                     }
 
@@ -442,15 +389,15 @@ class MigrateSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException
+     * @throws DBALException|DBALDriverException
      */
     protected function autoDetectFrom(): ?int
     {
-        if (class_exists( SubColumnsBootstrapBundle::class)) {
+        if (\class_exists(SubColumnsBootstrapBundle::class)) {
             return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
         }
 
-        if (class_exists(ModuleSubcolumns::class)) {
+        if (\class_exists(ModuleSubcolumns::class)) {
             return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
         }
 
@@ -464,12 +411,12 @@ class MigrateSubcolumnsCommand extends Command
             return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
         }
 
-        if ($this->dbColumnExists('tl_content', 'sc_columnset'))
+        if ($this->helper->dbColumnExists('tl_content', 'sc_columnset'))
         {
             return MigrationConfig::FROM_SUBCOLUMNS_BOOTSTRAP_BUNDLE;
         }
 
-        if ($this->dbColumnExists('tl_content', 'sc_type'))
+        if ($this->helper->dbColumnExists('tl_content', 'sc_type'))
         {
             return MigrationConfig::FROM_SUBCOLUMNS_MODULE;
         }

@@ -3,6 +3,7 @@
 namespace HeimrichHannot\Subcolumns2Grid\Command;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use Symfony\Component\Console\Command\Command;
@@ -14,12 +15,15 @@ use Throwable;
 class ResetSubcolumnsCommand extends Command
 {
     protected Connection $connection;
+    protected Helper $helper;
 
     public function __construct(
         Connection $connection,
+        Helper     $helper,
         ?string    $name = null
     ) {
         $this->connection = $connection;
+        $this->helper = $helper;
         parent::__construct($name);
     }
 
@@ -62,7 +66,7 @@ class ResetSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException
+     * @throws DBALException|DBALDriverException
      */
     protected function reset(SymfonyStyle $io): void
     {
@@ -159,12 +163,12 @@ class ResetSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException
+     * @throws DBALException|DBALDriverException
      */
     protected function rollbackTlContent(): bool
     {
-        $scTypeExists = Helper::dbColumnExists($this->connection, 'tl_content', 'sc_type');
-        $scColumnsetExists = Helper::dbColumnExists($this->connection, 'tl_content', 'sc_columnset');
+        $scTypeExists = $this->helper->dbColumnExists('tl_content', 'sc_type');
+        $scColumnsetExists = $this->helper->dbColumnExists('tl_content', 'sc_columnset');
 
         if (!$scTypeExists && !$scColumnsetExists) {
             return false;
@@ -190,12 +194,12 @@ class ResetSubcolumnsCommand extends Command
     }
 
     /**
-     * @throws DBALException
+     * @throws DBALException|DBALDriverException
      */
     protected function rollbackTlFormField(): bool
     {
-        $scTypeExists = Helper::dbColumnExists($this->connection, 'tl_form_field', 'fsc_type');
-        $scColumnsetExists = Helper::dbColumnExists($this->connection, 'tl_form_field', 'sc_columnset');
+        $scTypeExists = $this->helper->dbColumnExists('tl_form_field', 'fsc_type');
+        $scColumnsetExists = $this->helper->dbColumnExists('tl_form_field', 'sc_columnset');
 
         if (!$scTypeExists && !$scColumnsetExists) {
             return false;

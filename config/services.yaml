@@ -5,4 +5,4 @@ services:
     public: false
 
   HeimrichHannot\Subcolumns2Grid\:
-    resource: '../src/{Command,Manager}/*'
+    resource: '../src/{Command,Manager,Util}/*'

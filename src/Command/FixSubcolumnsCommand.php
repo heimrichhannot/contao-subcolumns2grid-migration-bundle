@@ -8,7 +8,9 @@ use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Result;
 use HeimrichHannot\Subcolumns2Grid\Exception\FixException;
+use HeimrichHannot\Subcolumns2Grid\Exception\Sub2ColException;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
+use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,6 +21,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class FixSubcolumnsCommand extends Command
 {
     protected Connection $connection;
+    protected Helper $helper;
     protected ProgressBar $progress;
     protected bool $cleanse;
     protected bool $dryRun;
@@ -27,9 +30,11 @@ class FixSubcolumnsCommand extends Command
 
     public function __construct(
         Connection $connection,
+        Helper $helper,
         ?string $name = null
     ) {
         $this->connection = $connection;
+        $this->helper = $helper;
         parent::__construct($name);
     }
 
@@ -47,18 +52,35 @@ class FixSubcolumnsCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $this->cleanse = (bool) $input->getOption('cleanse');
-        $this->dryRun = (bool) $input->getOption('dry-run');
 
         try
         {
+            $this->dryRun = $this->helper->initDryRun(
+                (bool) $input->getOption('dry-run') ?? false,
+                Helper::TEST_TL_CONTENT + Helper::TEST_TL_FORM_FIELD
+            );
+
+            if ($this->dryRun) {
+                $io->warning('Running in dry-run mode. No changes will be made to the database.');
+            }
+
             $this->initProgressBar($output);
 
             $this->connection->beginTransaction();
 
+            $noneFoundIn = [];
+
             try
             {
-                $this->fixTlContent();
-                $this->fixTlFormField();
+                if (!$this->fixTlContent())
+                {
+                    $noneFoundIn[] = 'tl_content';
+                }
+
+                if (!$this->fixTlFormField())
+                {
+                    $noneFoundIn[] = 'tl_form_field';
+                }
             }
             catch (\Throwable $e)
             {
@@ -70,8 +92,13 @@ class FixSubcolumnsCommand extends Command
                 ? $this->connection->rollBack()
                 : $this->connection->commit();
 
-            $io->newLine(2);
-            $io->info('Finished processing all records.');
+            if (empty($noneFoundIn)) $io->newLine(2);
+            $io->success('Finished processing all records.');
+
+            if (!empty($noneFoundIn))
+            {
+                $io->info(\sprintf('No relevant records found in: %s.', \implode(', ', $noneFoundIn)));
+            }
 
             foreach ($this->notes as $note)
             {
@@ -85,7 +112,7 @@ class FixSubcolumnsCommand extends Command
 
             return Command::SUCCESS;
         }
-        catch (FixException $e)
+        catch (Sub2ColException $e)
         {
             $io->error($e->getMessage());
             return Command::FAILURE;
@@ -115,20 +142,20 @@ class FixSubcolumnsCommand extends Command
      * @throws DBALException
      * @throws FixException
      */
-    protected function fixTlContent(): void
+    protected function fixTlContent(): bool
     {
         $result = $this->fetchTlContent();
-        $this->fixResults('tl_content', $result);
+        return $this->fixResults('tl_content', $result);
     }
 
     /**
      * @throws DBALException
      * @throws FixException
      */
-    protected function fixTlFormField(): void
+    protected function fixTlFormField(): bool
     {
         $result = $this->fetchTlFormField();
-        $this->fixResults('tl_form_field', $result, 'tl_form');
+        return $this->fixResults('tl_form_field', $result, 'tl_form');
     }
 
     /**
@@ -173,12 +200,12 @@ class FixSubcolumnsCommand extends Command
      * @throws FixException
      * @throws DBALException
      */
-    protected function fixResults(string $table, Result $result, ?string $overrideParentTable = null): void
+    protected function fixResults(string $table, Result $result, ?string $overrideParentTable = null): bool
     {
         $rowCount = $result->rowCount();
 
         if ($rowCount < 1) {
-            return;
+            return false;
         }
 
         $this->progress->start($rowCount);
@@ -209,7 +236,8 @@ class FixSubcolumnsCommand extends Command
                 // finish last parent
                 if ($currentParentId !== null)
                 {
-                    if (!empty($collector[$currentParentTable][$currentParentId])) {
+                    if (!empty($collector[$currentParentTable][$currentParentId]))
+                    {
                         $this->fixParent(
                             $table,
                             $currentParentId,
@@ -227,10 +255,6 @@ class FixSubcolumnsCommand extends Command
                 // start a new parent
                 $currentParentId = $row['pid'];
                 $collector[$currentParentTable][$currentParentId] = [];
-            }
-
-            if ($currentParentId == 28) {
-                $x = 1;
             }
 
             $this->progress->setMessage(\sprintf(
@@ -261,6 +285,8 @@ class FixSubcolumnsCommand extends Command
         }
 
         $this->progress->finish();
+
+        return true;
     }
 
     /**

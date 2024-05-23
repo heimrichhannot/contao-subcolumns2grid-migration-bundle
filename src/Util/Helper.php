@@ -7,10 +7,23 @@ use Doctrine\DBAL\DBALException as DBALDBALException;
 use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
 use Exception;
+use HeimrichHannot\Subcolumns2Grid\Exception\ConfigException;
+use Throwable;
 
 class Helper
 {
+    const TEST_TL_CONTENT = ['tl_content' => 'type'];
+    const TEST_TL_FORM_FIELD = ['tl_form_field' => 'type'];
+    const TEST_TL_BS_GRID = ['tl_bs_grid' => 'title'];
+
     static protected array $dbColumnsCache = [];
+
+    protected Connection $connection;
+
+    public function __construct(Connection $connection)
+    {
+        $this->connection = $connection;
+    }
 
     /**
      * @throws Exception
@@ -45,15 +58,15 @@ class Helper
     /**
      * @throws DBALDriverException|DBALDBALException|DBALException
      */
-    public static function dbColumnExists(Connection $connection, string $table, string $column): bool
+    public function dbColumnExists(string $table, string $column): bool
     {
-        $cacheKey = $connection->getDatabase() . "." . $table . "." . $column;
+        $cacheKey = $this->connection->getDatabase() . "." . $table . "." . $column;
 
         if (isset(self::$dbColumnsCache[$cacheKey])) {
             return self::$dbColumnsCache[$cacheKey];
         }
 
-        $stmt = $connection->prepare(<<<SQL
+        $stmt = $this->connection->prepare(<<<SQL
             SELECT COUNT(*)
               FROM information_schema.COLUMNS
              WHERE TABLE_SCHEMA = DATABASE()
@@ -68,5 +81,62 @@ class Helper
         $result = $stmt->executeQuery();
 
         return self::$dbColumnsCache[$cacheKey] = (int)$result->fetchOne() > 0;
+    }
+
+    /**
+     * @param mixed $payload
+     * @throws Throwable
+     */
+    public function testTransactionAbility(string $table, string $column, $payload = 's2g_transaction_test'): bool
+    {
+        $dbPlattform = @$this->connection->getDatabasePlatform() ?? null;
+
+        if ($dbPlattform
+            && \method_exists($dbPlattform, 'supportsTransactions')
+            && !$dbPlattform->supportsTransactions())
+        {
+            return false;
+        }
+
+        try
+        {
+            $this->connection->beginTransaction();
+            $this->connection->executeStatement("INSERT INTO `$table` (`$column`) VALUES (\"$payload\")");
+            $this->connection->rollBack();
+
+            return 0 === $this->connection
+                    ->executeQuery("SELECT COUNT(*) FROM `$table` WHERE `$column`=\"$payload\"")
+                    ->fetchOne();
+        }
+        catch (DBALException $e)
+        {
+            return false;
+        }
+        finally
+        {
+            $this->connection->executeStatement("DELETE FROM `$table` WHERE `$column`=\"$payload\" LIMIT 1");
+        }
+    }
+
+    /**
+     * @throws ConfigException|Throwable
+     * @internal
+     */
+    public function initDryRun(bool $option, array $tables): bool
+    {
+        if (!$option)
+        {
+            return false;
+        }
+
+        $supportsTransactions = \array_reduce(\array_keys($tables), function ($carry, $table) use ($tables) {
+            return $carry && $this->testTransactionAbility($table, $tables[$table]);
+        }, true);
+
+        if (!$supportsTransactions) {
+            throw new ConfigException('The database does not support transactions. Cannot run in dry-run mode.');
+        }
+
+        return true;
     }
 }
