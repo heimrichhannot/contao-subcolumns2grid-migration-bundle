@@ -24,6 +24,9 @@ to your choice of
 > Neither the subcolumns module nor subcolumns bootstrap bundle have to be installed,
 > although it does not hurt if they are.
 
+> [!TIP]
+> Run the [fix command](#fixing-corrupt-subcolumns) before migrating to ensure that all subcolumns are in a consistent state.
+
 
 ## Installation
 
@@ -103,7 +106,7 @@ vendor/bin/contao-console sub2grid:fix
 
 You may provide the `--dry-run` option to perform a dry run without committing changes to the database.
 
-Provide the `--cleanse`|`-c` option to remove all subcolumn content elements and form fields that pose incomplete start&mdash;part&mdash;end series AND that are turned invisible. In case of doubt, run the command without this option first.
+Provide the `--cleanse`|`-c` option to remove all subcolumn content elements and form fields that pose incomplete start&mdash;parts&mdash;end series AND that are turned invisible. In case of doubt, run the command without this option first.
 
 > [!NOTE]
 > The command will always throw an error if it detects any incomplete subcolumn content element series that are visible.
