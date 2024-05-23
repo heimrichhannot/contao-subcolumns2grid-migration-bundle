@@ -132,3 +132,17 @@ After the migration, you should check the affected pages and modules for any iss
 > [!IMPORTANT]
 > Running the migration multiple times will not duplicate any grid definitions, as long as you leave the created tags
 > (e.g. `[sub2grid:source.profile.name]`) within the grid definition descriptions untouched. 
+
+## Hotfixes for known issues
+
+### Using a container class on a column
+
+If you are using Bootstrap and the migration has added a `.container` class to a `.col`, you may experience issues with the column not being displayed correctly.
+
+To fix this, you can add the following SCSS snippet to your theme. Just make sure that it cascades after the Bootstrap styles. 
+
+```scss
+.ce_bs_gridStart > .col.container {
+    @include make-container-max-widths();
+}
+```
