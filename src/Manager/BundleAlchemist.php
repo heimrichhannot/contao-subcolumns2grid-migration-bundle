@@ -52,7 +52,7 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function getContentElements(MigrationConfig $config): array
     {
-        $scColumnsetExists = $this->dbColumnExists('tl_content', 'sc_columnset');
+        $scColumnsetExists = $this->helper->dbColumnExists('tl_content', 'sc_columnset');
         $sqlScColumnsetEmpty = $scColumnsetExists ? 'AND sc_columnset = ""' : '';
         $sqlScColumnsetSelect = $scColumnsetExists ? ', sc_columnset' : '';
 
@@ -73,7 +73,7 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function getFormFields(MigrationConfig $config): array
     {
-        $scColumnsetExists = $this->dbColumnExists('tl_form_field', 'sc_columnset');
+        $scColumnsetExists = $this->helper->dbColumnExists('tl_form_field', 'sc_columnset');
         $sqlScColumnsetEmpty = $scColumnsetExists ? 'AND sc_columnset = ""' : '';
         $sqlScColumnsetSelect = $scColumnsetExists ? ', sc_columnset' : '';
 
@@ -102,7 +102,7 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function checkIfContentElementsExist(): bool
     {
-        $sqlScColumnsetNotEmpty = $this->dbColumnExists('tl_content', 'sc_columnset')
+        $sqlScColumnsetNotEmpty = $this->helper->dbColumnExists('tl_content', 'sc_columnset')
             ? 'AND sc_columnset != ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
@@ -125,7 +125,7 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function checkIfFormFieldsExist(): bool
     {
-        $sqlScColumnsetNotEmpty = $this->dbColumnExists('tl_form_field', 'sc_columnset')
+        $sqlScColumnsetNotEmpty = $this->helper->dbColumnExists('tl_form_field', 'sc_columnset')
             ? 'AND sc_columnset != ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL

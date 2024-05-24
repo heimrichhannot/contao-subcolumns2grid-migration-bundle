@@ -203,7 +203,7 @@ abstract class AbstractAlchemist extends AbstractManager
     {
         if (empty($ceDTOs)) return;
 
-        $scColumnsetSelect = $this->dbColumnExists('tl_content', 'sc_columnset') ? ', sc_columnset' : '';
+        $scColumnsetSelect = $this->helper->dbColumnExists('tl_content', 'sc_columnset') ? ', sc_columnset' : '';
 
         $errMsg = <<<MSG
         

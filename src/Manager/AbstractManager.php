@@ -16,27 +16,22 @@ abstract class AbstractManager implements ServiceSubscriberInterface
 {
     protected Connection $connection;
     protected ContainerInterface $container;
+    protected Helper $helper;
     protected KernelInterface $kernel;
     protected ParameterBagInterface $parameterBag;
 
     public function __construct(
         Connection               $connection,
         ContainerInterface       $container,
+        Helper                   $helper,
         KernelInterface          $kernel,
         ParameterBagInterface    $parameterBag
     ) {
         $this->connection = $connection;
         $this->container = $container;
+        $this->helper = $helper;
         $this->kernel = $kernel;
         $this->parameterBag = $parameterBag;
-    }
-
-    /**
-     * @throws DBALDriverException|DBALDBALException|DBALException
-     */
-    protected function dbColumnExists(string $table, string $column): bool
-    {
-        return Helper::dbColumnExists($this->connection, $table, $column);
     }
 
     public static function getSubscribedServices(): array
