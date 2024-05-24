@@ -185,7 +185,7 @@ class MigrateSubcolumnsCommand extends Command
         }
     }
 
-    protected function printNotes(SymfonyStyle $io, MigrationConfig $config)
+    protected function printNotes(SymfonyStyle $io, MigrationConfig $config): void
     {
         foreach ($config->getNotes() as $note) {
             $io->note($note);
