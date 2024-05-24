@@ -41,7 +41,7 @@ class MigrateDBColsManager extends AbstractMigrationManager
 
             $idSource = $profile === 'bootstrap' ? 'bootstrap3' : $profile;
             $maxColCount = $row['columns'];
-            $rowClasses = "colcount_$maxColCount $idSource"; // col-$maxColCount? sc-type-$setName?
+            $rowClasses = "colcount_$maxColCount $idSource col_$maxColCount"; // col-$maxColCount? sc-type-$setName?
 
             $colset = ColsetDefinition::create()
                 ->setIdentifier($identifier)
