@@ -284,6 +284,16 @@ class FixSubcolumnsCommand extends Command
             $this->progress->advance();
         }
 
+        if (!empty($collector[$currentParentTable][$currentParentId]))
+        {
+            $this->fixParent(
+                $table,
+                $currentParentId,
+                $currentParentTable,
+                $collector[$currentParentTable][$currentParentId]
+            );
+        }
+
         $this->progress->finish();
 
         return true;
