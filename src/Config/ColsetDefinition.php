@@ -15,6 +15,7 @@ class ColsetDefinition implements \Countable
     protected ?string $insideClass;
     protected ?bool $published = false;
     protected ?string $cssID;
+    protected ?int $originColCount = null;
     protected ?string $rowClasses;
     /**
      * @var array<string, BreakpointDTO>
@@ -113,6 +114,17 @@ class ColsetDefinition implements \Countable
     public function getPublished(): ?bool
     {
         return $this->published;
+    }
+
+    public function getOriginColCount(): ?int
+    {
+        return $this->originColCount;
+    }
+
+    public function setOriginColCount(int $originColCount): self
+    {
+        $this->originColCount = $originColCount;
+        return $this;
     }
 
     public function setPublished(bool $published): self

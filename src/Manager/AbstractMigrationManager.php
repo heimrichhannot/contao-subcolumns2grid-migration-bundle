@@ -106,6 +106,7 @@ abstract class AbstractMigrationManager extends AbstractManager
         {
             if (\in_array($colset->getIdentifier(), $migrated, true))
             {
+                // skip already migrated column set definitions
                 continue;
             }
 

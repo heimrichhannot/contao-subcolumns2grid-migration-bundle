@@ -3,10 +3,12 @@
 namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
 use Contao\StringUtil;
+use Doctrine\DBAL\Exception as DBALException;
 use HeimrichHannot\Subcolumns2Grid\Config\BreakpointDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColumnDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
+use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 
 class MigrateDBColsManager extends AbstractMigrationManager
@@ -24,6 +26,10 @@ class MigrateDBColsManager extends AbstractMigrationManager
         $config->setDBSubcolumnDefinitions($columnSets);
     }
 
+    /**
+     * @throws MigrationException
+     * @throws DBALException
+     */
     protected function fetchSetDefinitions(MigrationConfig $config): array
     {
         $stmt = $this->connection->prepare('SELECT * FROM tl_columnset');
@@ -37,7 +43,18 @@ class MigrateDBColsManager extends AbstractMigrationManager
             $identifier = 'db.tl_columnset.' . $row['id'];
 
             $breakpoints = $this->createBreakpointsFromRow($row);
-            // note: having an empty set of breakpoints is valid for database column-sets
+            $colCount = $row['columns'];
+
+            if (empty($breakpoints))
+                // Note: Having an empty set of breakpoints is valid for database column sets,
+                //       but it must be adjusted to be compatible with the grid system.
+            {
+                if ($colCount < 1) throw new MigrationException(
+                    "Invalid 'columns' value for column-set \"$identifier\" (cannot be empty or <1)."
+                );
+
+                $breakpoints = $this->createBreakpointsFromColCount($colCount);
+            }
 
             $idSource = $profile === 'bootstrap' ? 'bootstrap3' : $profile;
             $maxColCount = $row['columns'];
@@ -47,6 +64,7 @@ class MigrateDBColsManager extends AbstractMigrationManager
                 ->setIdentifier($identifier)
                 ->setTitle($row['title'] . ' [db]')
                 ->setPublished((bool) $row['published'])
+                ->setOriginColCount($colCount)
                 ->setBreakpoints($breakpoints)
                 ->setRowClasses($rowClasses)
                 ->setUseInside((bool) $row['useInside'])
@@ -67,6 +85,18 @@ class MigrateDBColsManager extends AbstractMigrationManager
         }
 
         return $columnSets;
+    }
+
+    protected function createBreakpointsFromColCount(int $n): array
+    {
+        $xs = Constants::BREAKPOINTS[0];
+        $dto = new BreakpointDTO($xs);
+
+        $span = (string) round(12 / $n);
+
+        $dto->set(0, ColumnDefinition::create()->setSpan($span));
+
+        return [$xs => $dto];
     }
 
     /**
