@@ -22,6 +22,19 @@ final class Constants
         self::FF_TYPE_FORMCOL_END,
     ];
 
+    public const TYPES_START = [
+        self::CE_TYPE_COLSET_START,
+        self::FF_TYPE_FORMCOL_START,
+    ];
+    public const TYPES_PART = [
+        self::CE_TYPE_COLSET_PART,
+        self::FF_TYPE_FORMCOL_PART,
+    ];
+    public const TYPES_END = [
+        self::CE_TYPE_COLSET_END,
+        self::FF_TYPE_FORMCOL_END,
+    ];
+
     public const BS_GRID_START_TYPE = 'bs_gridStart';
     public const BS_GRID_SEPARATOR_TYPE = 'bs_gridSeparator';
     public const BS_GRID_STOP_TYPE = 'bs_gridStop';

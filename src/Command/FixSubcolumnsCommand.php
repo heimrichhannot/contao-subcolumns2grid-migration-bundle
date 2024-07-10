@@ -329,8 +329,8 @@ class FixSubcolumnsCommand extends Command
     protected function prepareSet(string $table, array $set, int $parentId, ?string $parentTable = null): bool
     {
         if (\count($set) < 2
-            || $set[0]['type'] !== Constants::CE_TYPE_COLSET_START
-            || $set[\count($set) - 1]['type'] !== Constants::CE_TYPE_COLSET_END)
+            || !\in_array($set[0]['type'], Constants::TYPES_START, true)
+            || !\in_array($set[\count($set) - 1]['type'], Constants::TYPES_END, true))
         {
             [$ids, $strIds] = $this->mapIds($set);
 
@@ -419,7 +419,7 @@ class FixSubcolumnsCommand extends Command
                        WHEN :startType THEN :startName
                        WHEN :partType THEN :partName
                        WHEN :endType THEN :endName
-                       ELSE sc_name
+                       ELSE fsc_name
                    END
              WHERE id IN ($strIds)
                AND pid = :parentId
@@ -427,9 +427,9 @@ class FixSubcolumnsCommand extends Command
 
         $stmt->bindValue('startId', $startId, ParameterType::INTEGER);
 
-        $stmt->bindValue('startType', Constants::CE_TYPE_COLSET_START);
-        $stmt->bindValue('partType', Constants::CE_TYPE_COLSET_PART);
-        $stmt->bindValue('endType', Constants::CE_TYPE_COLSET_END);
+        $stmt->bindValue('startType', Constants::FF_TYPE_FORMCOL_START);
+        $stmt->bindValue('partType', Constants::FF_TYPE_FORMCOL_PART);
+        $stmt->bindValue('endType', Constants::FF_TYPE_FORMCOL_END);
         $stmt->bindValue('startName', $format());
         $stmt->bindValue('partName', $format('-Part'));
         $stmt->bindValue('endName', $format('-End'));
