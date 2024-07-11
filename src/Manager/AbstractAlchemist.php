@@ -212,7 +212,7 @@ abstract class AbstractAlchemist extends AbstractManager
         SELECT `id`, `type`, `pid`, `ptable`, `sorting`, `tstamp`, `sc_sortid`, `sc_childs`,
                `sc_parent`, `sc_type`, `sc_name`$scColumnsetSelect FROM `tl_content`
         WHERE `sc_parent`="$parentId" AND `type` LIKE "colset%" OR `type` LIKE "formcol%"
-        ORDER BY type DESC, id ASC;
+        ORDER BY ptable ASC, pid ASC, type DESC, id ASC;
         MSG;
 
         if (\count($ceDTOs) < 2) {
