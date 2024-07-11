@@ -18,6 +18,12 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * Command to fix corrupted subcolumns in the database.
+ *
+ * This command provides functionality to identify and fix corrupted subcolumn entries within the database.
+ * It supports a dry-run mode for safe testing and an option to cleanse by deleting corrupt entities that are not published.
+ */
 class FixSubcolumnsCommand extends Command
 {
     protected Connection $connection;
@@ -218,41 +224,55 @@ class FixSubcolumnsCommand extends Command
         $currentSetNestingLevel = -1;
         $nestedStartIds = [];
 
+        $processCurrentParent = function () use (
+            $table,
+            &$collector,
+            &$currentParentTable,
+            &$currentParentId,
+            &$currentSetNestingLevel,
+            &$nestedStartIds
+        ) {
+            if ($currentParentTable === null || $currentParentId === null) {
+                return;
+            }
+
+            if (!empty($collector[$currentParentTable][$currentParentId]))
+            {
+                $this->fixParent(
+                    $table,
+                    $currentParentId,
+                    $currentParentTable,
+                    $collector[$currentParentTable][$currentParentId]
+                );
+            }
+
+            unset($collector[$currentParentTable][$currentParentId]);
+
+            $currentParentId = null;
+            $currentSetNestingLevel = -1;
+            $nestedStartIds = [];
+        };
+
         while ($row = $result->fetchAssociative())
         {
             if (!$overrideParentTable && $currentParentTable !== $row['ptable'])
+            // new parent table
             {
-                if ($currentParentId !== null)
-                {
-                    unset($collector[$currentParentTable]);
-                }
+                $processCurrentParent();
 
+                unset($collector[$currentParentTable]);
+
+                // start a new parent table entry
                 $currentParentTable = $row['ptable'];
                 $collector[$currentParentTable] = [];
             }
 
             if ($currentParentId !== $row['pid'])
+            // new parent
             {
-                // finish last parent
-                if ($currentParentId !== null)
-                {
-                    if (!empty($collector[$currentParentTable][$currentParentId]))
-                    {
-                        $this->fixParent(
-                            $table,
-                            $currentParentId,
-                            $currentParentTable,
-                            $collector[$currentParentTable][$currentParentId]
-                        );
-                    }
+                $processCurrentParent();
 
-                    unset($collector[$currentParentTable][$currentParentId]);
-
-                    $currentSetNestingLevel = -1;
-                    $nestedStartIds = [];
-                }
-
-                // start a new parent
+                // start a new parent entity entry
                 $currentParentId = $row['pid'];
                 $collector[$currentParentTable][$currentParentId] = [];
             }
@@ -265,7 +285,7 @@ class FixSubcolumnsCommand extends Command
                 $currentParentId
             ));
 
-            if ($row['type'] === Constants::CE_TYPE_COLSET_START)
+            if (\in_array($row['type'], Constants::TYPES_START, true))
             {
                 $currentSetNestingLevel++;
                 $nestedStartIds[$currentSetNestingLevel] = $row['id'];
@@ -276,7 +296,7 @@ class FixSubcolumnsCommand extends Command
             $collector[$currentParentTable][$currentParentId][$nearestStartId] ??= [];
             $collector[$currentParentTable][$currentParentId][$nearestStartId][] = $row;
 
-            if ($row['type'] === Constants::CE_TYPE_COLSET_END)
+            if (\in_array($row['type'], Constants::TYPES_END, true))
             {
                 $currentSetNestingLevel--;
             }
@@ -285,6 +305,7 @@ class FixSubcolumnsCommand extends Command
         }
 
         if (!empty($collector[$currentParentTable][$currentParentId]))
+        // finish last parent of last parent table
         {
             $this->fixParent(
                 $table,
