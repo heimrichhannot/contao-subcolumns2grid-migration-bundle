@@ -62,6 +62,7 @@ class MigrateGlobalColsManager extends AbstractMigrationManager
                 }
 
                 $idSource = $profileName === 'bootstrap' ? 'bootstrap3' : $profileName;
+                $idSource = \str_replace('boostrap', 'bootstrap', $idSource);
                 $identifier = \sprintf('globals.%s.%s', $idSource, $setName);
                 $maxColCount = \max(\array_map('count', $breakpoints) ?: [0]);
                 $rowClasses = "colcount_$maxColCount $idSource sc-type-$setName" . (\is_numeric($setName) ? " col_$setName" : " col-$setName");
