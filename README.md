@@ -121,6 +121,20 @@ These issues may manifest as missing subcolumn content elements and form fields,
 > These issues arose due to a bug in the SubcolumnsBootstrapBundle prior to version 1.11.3 and the Subcolumns module, which caused the wrong `sc_parent` IDs to be inherited upon cloning subcolumn content elements and form fields.
 
 
+## Wording
+
+- **Module**: Refers to the legacy [Subcolumns module](https://github.com/heimrichhannot/contao-subcolumns).
+- **Bundle**: Refers to the [SubcolumnsBootstrapBundle](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle) (EOL).
+- **Set**: A configuration of content divisors of defined width and offset that make up a column set. 
+- **Series**: Refers to a series of subcolumn content elements or form fields that are defined by a column set. A start element, any number of part elements, and a stop element make up a series.
+- **Subcolumn Content Elements**: Refers to the content elements that are part of a subcolumn set in `tl_content`.
+- **Subcolumn Form Fields**: Refers to the form fields that are part of a subcolumn set in `tl_form_field`.
+- **Alchemist**: Refers to the migration tools that transform subcolumns to grids.
+- **Set Definitions**: Refers to the definitions of subcolumn sets in either the database or the global variable. 
+- **Globals**: Refers to the global subcolumn set definitions in `config.php` and `$GLOBALS['TL_SUBCL']`, respectively.
+- **Database Definitions**: Refers to subcolumn set definitions stored in the database.
+
+
 ## Aftermath
 
 After the migration, you should check the affected pages and modules for any issues.
