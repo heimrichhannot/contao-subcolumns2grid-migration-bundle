@@ -121,7 +121,7 @@ These issues may manifest as missing subcolumn content elements and form fields,
 
 Post-migration, verify affected pages and modules.
 
-- The migration trys to use database transactions and only commits if no errors occur.
+- The migration tries to use database transactions and only commits if no errors occur.
 - The migration will migrate global subcolumn set definitions from your `config.php` and `$GLOBALS['TL_SUBCL']`,
   respectively, to grid definitions of any theme you select or optionally of a newly created one.
 - The migration will migrate database-defined subcolumn definitions to grid definitions of any theme you choose or
