@@ -24,7 +24,8 @@ to your choice of
 > Run the [fix command](#fixing-corrupt-subcolumns) before migrating to ensure that all subcolumns are in a consistent state.
 
 > [!TIP]
-> Error messages will generally try to guide you to the source of the issue. If you encounter any issues, please report them on the [GitHub issue tracker](https://github.com/heimrichhannot/contao-subcolumns2grid-migration-bundle/issues).
+> Error messages will generally try to guide you to the source of the issue. If you encounter any issues that are not covered in this document, or that you are unable to resolve yourself,
+> please report them on the [GitHub issue tracker](https://github.com/heimrichhannot/contao-subcolumns2grid-migration-bundle/issues).
 
 ## Installation
 
