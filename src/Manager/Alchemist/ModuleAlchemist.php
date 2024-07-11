@@ -40,7 +40,7 @@ class ModuleAlchemist extends AbstractAlchemist
             ? 'AND sc_columnset = ""' : '';
 
         $stmt = $this->connection->prepare(<<<SQL
-            SELECT id, type, customTpl, fsc_childs, fsc_parent, fsc_type, fsc_name
+            SELECT id, pid, type, customTpl, fsc_childs, fsc_parent, fsc_type, fsc_name
               FROM tl_form_field
              WHERE type LIKE "formcol%"
                $sqlScColumnsetEmpty

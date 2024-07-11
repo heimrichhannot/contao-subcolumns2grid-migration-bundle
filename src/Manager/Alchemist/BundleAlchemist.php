@@ -102,6 +102,13 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function checkIfContentElementsExist(): bool
     {
+        $scColumnsetExists = $this->helper->dbColumnExists('tl_content', 'sc_columnset');
+        $columnsetIdExists = $this->helper->dbColumnExists('tl_content', 'columnset_id');
+
+        if (!$scColumnsetExists && !$columnsetIdExists) {
+            return false;
+        }
+
         $sqlScColumnsetNotEmpty = $this->helper->dbColumnExists('tl_content', 'sc_columnset')
             ? 'AND sc_columnset != ""' : '';
 
@@ -125,6 +132,13 @@ class BundleAlchemist extends AbstractAlchemist
      */
     public function checkIfFormFieldsExist(): bool
     {
+        $scColumnsetExists = $this->helper->dbColumnExists('tl_form_field', 'sc_columnset');
+        $columnsetIdExists = $this->helper->dbColumnExists('tl_form_field', 'columnset_id');
+
+        if (!$scColumnsetExists && !$columnsetIdExists) {
+            return false;
+        }
+
         $sqlScColumnsetNotEmpty = $this->helper->dbColumnExists('tl_form_field', 'sc_columnset')
             ? 'AND sc_columnset != ""' : '';
 
