@@ -1,10 +1,10 @@
 # Migrate H&#8239;<small>&amp;</small>&#8239;H Subcolumns to CB&#8239;Grids
 
-This bundle aids in migrating from either one of
+This bundle facilitates the migration from either one of:
 - [`heimrichhannot/subcolumns`](https://github.com/heimrichhannot/contao-subcolumns)
 - [`heimrichhannot/contao-subcolumns-bootstrap-bundle`](https://github.com/heimrichhannot/contao-subcolumns-bootstrap-bundle)
 
-to your choice of
+to your choice of:
 - [`contao-bootstrap/grid:^2.0`](https://github.com/contao-bootstrap/grid)
 - [`contao-bootstrap/grid:^3.0`](https://contao-bootstrap.de/bootstrap-5-verwenden.html)
 
@@ -13,8 +13,8 @@ to your choice of
 
 - Contao 4.13 or higher
 - PHP 7.4 or higher
-- Either version 2 or 3 of `contao-bootstrap/grid` installed
-- Contao database migrations must be up-to-date
+- `contao-bootstrap/grid` v2 or v3 installed
+- Updated Contao database migrations
 
 > [!CAUTION]
 > You may also run the migration with none of the subcolumns packages installed, i.e. on Contao 5.
@@ -61,8 +61,8 @@ You may also provide all non-inferable options to skip the wizard.
 #### Most common options
 
 - `--from FROM`|`-f FROM`: The package to migrate from. Either `m` for the legacy SubColumns module or `b` for the SubcolumnsBootstrapBundle.
-- `--theme THEME_ID`|`-t THEME_ID`: The theme ID to create the grid definitions on. Set to 0 to create a new theme.
-- `--grid-version GRID_VERSION`|`-g GRID_VERSION`: The grid version to migrate to. Either `2` or `3`.
+- `--theme THEME_ID`|`-t THEME_ID`: The theme ID to create the grid definitions on. Use `0` to create a new theme.
+- `--grid-version GRID_VERSION`|`-g GRID_VERSION`: The grid version to migrate to (`2` or `3`).
 - `--dry-run`: Perform a dry run without committing changes to the database.
 
 For example:
@@ -79,17 +79,13 @@ vendor/bin/contao-console sub2grid:migrate --help
 
 ### Rolling back
 
-If you want to roll back the migration, use the following command:
+To roll back the migration:
 
 ```bash
 vendor/bin/contao-console sub2grid:rollback
 ```
 
-This command will prompt you to choose whether to reset the types of the migrated content elements and/or form fields,
-whether to reset their `customTpl` settings that have been overwritten during the migration, and whether to remove
-previously migrated grid definitions.
-
-To run a full rollback and skip all prompts, provide the `-n` option:
+This command prompts for reset options. To skip prompts, use:
 
 ```bash
 vendor/bin/contao-console sub2grid:rollback -n
@@ -113,7 +109,7 @@ Meaning that if the elements of a column set are invisible, and their start or s
 In case of doubt, run the command without this option first.
 
 > [!NOTE]
-> The command will always throw an error if it passes an incomplete subcolumn content element series *that is visible*. You will have to investigate and fix these manually.
+> The command errors if it finds incomplete, *visible* subcolumn content element series. You will have to investigate and fix these manually.
 
 > **Trivia:** If you have been using the SubcolumnsBootstrapBundle prior to version 1.11.3 or the Subcolumns module, you may encounter issues with corrupt subcolumns.
 These issues may manifest as missing subcolumn content elements and form fields, or as such elements that are not properly linked to their subcolumn start element.
@@ -123,9 +119,9 @@ These issues may manifest as missing subcolumn content elements and form fields,
 
 ## Aftermath
 
-After the migration, you should check the affected pages and modules for any issues.
+Post-migration, verify affected pages and modules.
 
-- The migration will only be commited to the database if no errors occur during the migration.
+- The migration trys to use database transactions and only commits if no errors occur.
 - The migration will migrate global subcolumn set definitions from your `config.php` and `$GLOBALS['TL_SUBCL']`,
   respectively, to grid definitions of any theme you select or optionally of a newly created one.
 - The migration will migrate database-defined subcolumn definitions to grid definitions of any theme you choose or
@@ -137,8 +133,8 @@ After the migration, you should check the affected pages and modules for any iss
 > You may run the migration multiple times without causing issues.
 
 > [!IMPORTANT]
-> Running the migration multiple times will not duplicate any grid definitions, as long as you leave the created tags
-> (e.g. `[sub2grid:source.profile.name]`) within the grid definition descriptions untouched. 
+> Running the migration multiple times doesn't duplicate grid definitions if the created tags
+> (e.g. `[sub2grid:source.profile.name]`) within the grid definition descriptions remain unchanged. 
 
 
 ## Wording
@@ -161,7 +157,7 @@ After the migration, you should check the affected pages and modules for any iss
 
 If you are using Bootstrap and the migration has added a `.container` class to a `.col`, you may experience issues with the column not being displayed correctly.
 
-To fix this, you can add the following SCSS snippet to your theme. Just make sure that it cascades after the Bootstrap styles. 
+To fix this, add the following SCSS snippet to your theme. Just make sure that it cascades after the Bootstrap styles. 
 
 ```scss
 .ce_bs_gridStart > .col.container {
