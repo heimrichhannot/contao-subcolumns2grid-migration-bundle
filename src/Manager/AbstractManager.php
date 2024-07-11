@@ -4,8 +4,8 @@ namespace HeimrichHannot\Subcolumns2Grid\Manager;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DBALException as DBALDBALException;
-use Doctrine\DBAL\Driver\Exception as DBALDriverException;
-use Doctrine\DBAL\Exception as DBALException;
+use HeimrichHannot\Subcolumns2Grid\Manager\Alchemist\BundleAlchemist;
+use HeimrichHannot\Subcolumns2Grid\Manager\Alchemist\ModuleAlchemist;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;

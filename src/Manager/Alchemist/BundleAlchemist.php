@@ -1,6 +1,6 @@
 <?php
 
-namespace HeimrichHannot\Subcolumns2Grid\Manager;
+namespace HeimrichHannot\Subcolumns2Grid\Manager\Alchemist;
 
 use Doctrine\DBAL\DBALException as DBALDBALException;
 use Doctrine\DBAL\Driver\Exception as DBALDriverException;

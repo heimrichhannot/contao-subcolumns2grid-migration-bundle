@@ -1,6 +1,6 @@
 <?php
 
-namespace HeimrichHannot\Subcolumns2Grid\Manager;
+namespace HeimrichHannot\Subcolumns2Grid\Manager\Alchemist;
 
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;

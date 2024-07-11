@@ -1,6 +1,6 @@
 <?php
 
-namespace HeimrichHannot\Subcolumns2Grid\Manager;
+namespace HeimrichHannot\Subcolumns2Grid\Manager\Alchemist;
 
 use Doctrine\DBAL\DBALException as DBALDBALException;
 use Doctrine\DBAL\Driver\Exception as DBALDriverException;
@@ -10,6 +10,7 @@ use Doctrine\DBAL\Result;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
+use HeimrichHannot\Subcolumns2Grid\Manager\AbstractManager;
 use HeimrichHannot\Subcolumns2Grid\Util\Constants;
 use HeimrichHannot\Subcolumns2Grid\Util\Helper;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -41,13 +42,13 @@ abstract class AbstractAlchemist extends AbstractManager
     /**
      * @throws MigrationException
      */
-    protected abstract function identifierFromColsetElementDTO(MigrationConfig $config, ColsetElementDTO $dto): string;
+    protected abstract function identifierFromColsetElementDTO(MigrationConfig $config, ColsetElementDTO $ce): string;
 
     /**
      * @throws DBALDBALException|DBALDriverException|DBALException
      * @throws MigrationException
      */
-    public function transform(SymfonyStyle $io, MigrationConfig $config)
+    public function transform(SymfonyStyle $io, MigrationConfig $config): void
     {
         $io->section("Migration of {$this->getName()} content elements and form fields");
 
@@ -119,7 +120,7 @@ abstract class AbstractAlchemist extends AbstractManager
             if (!$ce->isValid())
             {
                 $config->addNote(
-                    "Could not identify entity $table.id={$ce->getId()}. "
+                    "Could not identify entity $table.id={$ce->getId()} from {$this->getName()} alchemist. "
                     . "One or more database entries in $table might be corrupt."
                 );
                 continue;
@@ -132,7 +133,7 @@ abstract class AbstractAlchemist extends AbstractManager
             catch (MigrationException $e)
             {
                 throw new MigrationException(
-                    "Could not identify entity $table.id={$ce->getId()}. "
+                    "Could not identify entity $table.id={$ce->getId()} from {$this->getName()} alchemist. "
                     . $e->getMessage()
                 );
             }
