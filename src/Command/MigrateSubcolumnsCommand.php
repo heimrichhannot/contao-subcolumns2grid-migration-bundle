@@ -324,8 +324,12 @@ class MigrateSubcolumnsCommand extends Command
                 $config->addSource(MigrationConfig::SOURCE_DB);
 
                 $needFetchGlobals = function (string $table, array $types) {
-                    if (!$this->helper->dbColumnExists($table, 'sc_columnset')) {
-                        return false;
+                    if (!$this->helper->dbColumnExists($table, 'sc_columnset'))
+                    // if sc_columnset does not exist, we are dealing with a legacy installation
+                    // if there is no columnset_id, the global config array's key is stored in sc_type/fsc_type
+                    // hence we need to fetch the globals
+                    {
+                        return !$this->helper->dbColumnExists($table, 'columnset_id');
                     }
 
                     $inTypes = \implode(', ', \array_map(fn($type) => "'$type'", $types));
