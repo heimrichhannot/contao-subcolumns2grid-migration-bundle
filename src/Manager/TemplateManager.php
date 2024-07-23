@@ -180,7 +180,7 @@ class TemplateManager extends AbstractManager
      */
     public function findColumnTemplate(MigrationConfig $config, ColsetElementDTO $ce): ?string
     {
-        $def = $config->getSubcolumnDefinition($ce->getIdentifier());
+        $def = $config->getSubcolumnDefinition($ce->getStartDTO()->getIdentifier());
 
         if (!$def) {
             throw new MigrationException(

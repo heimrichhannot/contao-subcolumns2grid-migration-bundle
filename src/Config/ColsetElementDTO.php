@@ -2,6 +2,8 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Config;
 
+use HeimrichHannot\Subcolumns2Grid\Util\Constants;
+
 class ColsetElementDTO
 {
     /**
@@ -241,7 +243,7 @@ class ColsetElementDTO
             and $this->pid
             and $this->type
             and $this->scParent
-            and $this->scType || $this->identifier
+            and !\in_array($this->type, Constants::TYPES_START) || $this->scType || $this->identifier
         );
     }
 }

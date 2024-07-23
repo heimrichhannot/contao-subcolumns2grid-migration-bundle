@@ -149,7 +149,7 @@ abstract class AbstractAlchemist extends AbstractManager
 
             $contentElements[$ce->getScParent()][] = $ce;
 
-            if ($ce->getType() === Constants::CE_TYPE_COLSET_START || $ce->getType() === Constants::FF_TYPE_FORMCOL_START)
+            if (\in_array($ce->getType(), Constants::TYPES_START, true))
             {
                 $parentElements[$ce->getId()] = $ce;
             }
@@ -213,7 +213,7 @@ abstract class AbstractAlchemist extends AbstractManager
         SELECT `id`, `type`, `pid`, `ptable`, `sorting`, `tstamp`, `sc_sortid`, `sc_childs`,
                `sc_parent`, `sc_type`, `sc_name`$scColumnsetSelect FROM `tl_content`
         WHERE `sc_parent`="$parentId" AND `type` LIKE "colset%" OR `type` LIKE "formcol%"
-        ORDER BY ptable ASC, pid ASC, type DESC, id ASC;
+        ORDER BY ptable ASC, pid ASC, type DESC, sorting ASC, id ASC;
         MSG;
 
         if (\count($ceDTOs) < 2) {
