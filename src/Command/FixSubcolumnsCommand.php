@@ -30,6 +30,7 @@ class FixSubcolumnsCommand extends Command
     protected Helper $helper;
     protected ProgressBar $progress;
     protected bool $cleanse;
+    protected bool $force;
     protected bool $dryRun;
     protected array $notes = [];
     protected array $errors = [];
@@ -50,6 +51,7 @@ class FixSubcolumnsCommand extends Command
             ->setDescription('Fixes corrupted subcolumns in the database.')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Do not write changes to the database.')
             ->addOption('cleanse', 'c', InputOption::VALUE_NONE, 'Allow the deletion of corrupt entities that are not published.')
+            ->addOption('force', 'f', InputOption::VALUE_NONE, 'Force the execution of the command even on entities that are published.')
         ;
     }
 
@@ -58,11 +60,12 @@ class FixSubcolumnsCommand extends Command
         $io = new SymfonyStyle($input, $output);
 
         $this->cleanse = (bool) $input->getOption('cleanse');
+        $this->force = (bool) $input->getOption('force');
 
         try
         {
             $this->dryRun = $this->helper->initDryRun(
-                (bool) $input->getOption('dry-run') ?? false,
+                (bool) ($input->getOption('dry-run') ?? false),
                 Helper::TEST_TL_CONTENT + Helper::TEST_TL_FORM_FIELD
             );
 
@@ -364,12 +367,13 @@ class FixSubcolumnsCommand extends Command
 
             $errMsg = "corrupt set -- incomplete series\n$sqlSelect";
 
-            if ($this->cleanse && $allInvisible)
+            if ($this->cleanse && ($this->force || $allInvisible))
             {
                 $this->notes[] = "deleted $errMsg";
+                $qTable = $this->connection->quoteIdentifier($table);
                 $this->connection->executeQuery(
-                    'DELETE FROM ? WHERE id IN (?)',
-                    [$table, $ids], [ParameterType::STRING, ArrayParameterType::INTEGER]
+                    "DELETE FROM $qTable WHERE id IN (?)",
+                    [$ids], [ArrayParameterType::INTEGER]
                 );
                 return false;
             }

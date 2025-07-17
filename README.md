@@ -108,6 +108,8 @@ Provide the `--cleanse`|`-c` option to remove all subcolumn content elements and
 Meaning that if the elements of a column set are invisible, and their start or stop is missing, they will be deleted.
 In case of doubt, run the command without this option first.
 
+Provide the `--force`|`-f` in combination with `--cleanse` to force the removal of all subcolumn content elements and form fields that pose incomplete start&mdash;parts&mdash;end series, regardless of their visibility.
+
 > [!NOTE]
 > The command errors if it finds incomplete, *visible* subcolumn content element series. You will have to investigate and fix these manually.
 
