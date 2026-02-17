@@ -132,7 +132,7 @@ class MigrateSubcolumnsCommand extends Command
             $this->loadGridBundle($io);
 
             $this->dryRun = $this->helper->initDryRun(
-                (bool) $input->getOption('dry-run') ?? false,
+                (bool) ($input->getOption('dry-run') ?? false),
                 Helper::TEST_TL_CONTENT + Helper::TEST_TL_FORM_FIELD + Helper::TEST_TL_BS_GRID
             );
 
