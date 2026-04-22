@@ -27,7 +27,7 @@ class TemplateManager extends AbstractManager
         $source = $this->getBundlePath() . '/contao/templates';
         $target = $this->parameterBag->get('kernel.project_dir') . '/contao/templates/elements';
 
-        if (!\is_dir($target) && !\mkdir($target, 0777, true))
+        if (!\is_dir($target) && !\mkdir($target, 0777, true) && !\is_dir($target))
         {
             throw new \Exception("Could not create template target directory: \"$target\"");
         }
@@ -40,7 +40,11 @@ class TemplateManager extends AbstractManager
 
         foreach ($colSets as $colSet)
         {
-            $outsideClass = $colSet->getUseOutside() ? $colSet->getOutsideClass() ?: 0 : 0;
+            if ($colSet->getUseOutside()) {
+                $outsideClass = $colSet->getOutsideClass() ?: 0;
+            }
+
+            $outsideClass ??= 0;
             $wrappedClasses[$outsideClass] ??= [];
 
             if ($colSet->getUseInside() && $insideClass = $colSet->getInsideClass())
@@ -64,23 +68,17 @@ class TemplateManager extends AbstractManager
 
             if ($outerClass && empty($innerClasses))
             {
-                $copied = \array_merge(
-                    $copied,
-                    $this->copyTemplates($source, $target, $outerClass)
-                );
+                \array_push($copied, ...$this->copyTemplates($source, $target, $outerClass));
                 continue;
             }
 
             foreach (\array_unique($innerClasses) as $innerClass)
             {
-                $copied = \array_merge(
-                    $copied,
-                    $this->copyTemplates($source, $target, $outerClass, $innerClass)
-                );
+                \array_push($copied, ...$this->copyTemplates($source, $target, $outerClass, $innerClass));
             }
         }
 
-        return $copied;
+        return \array_unique($copied);
     }
 
     /**
@@ -89,14 +87,14 @@ class TemplateManager extends AbstractManager
      * @param string|null $outerClass The outer class name.
      * @param string|null $innerClass The inner class name.
      * @param array $replace The keys to replace in the template content and source file name.
-     * @return array The copied files.
+     * @return string[] The copied files.
      * @throws MigrationException
      */
     protected function copyTemplates(
         string $sourceDir,
         string $targetDir,
-        string $outerClass = null,
-        string $innerClass = null,
+        ?string $outerClass = null,
+        ?string $innerClass = null,
         array  $replace = []
     ): array {
         if (!\is_dir($sourceDir)) {

@@ -445,7 +445,7 @@ class MigrateSubcolumnsCommand extends Command
     /**
      * @throws \Exception
      */
-    protected static function initGridVersion(InputInterface $input, SymfonyStyle $io, string &$info = null): int
+    protected static function initGridVersion(InputInterface $input, SymfonyStyle $io, ?string &$info = null): int
     {
         $gridVersion = $input->getOption('grid-version');
         if ($gridVersion !== null && \in_array($gridVersion = (int) \ltrim($gridVersion, ' :='), [2, 3])) {
