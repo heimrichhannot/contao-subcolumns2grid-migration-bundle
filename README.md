@@ -96,6 +96,14 @@ vendor/bin/contao-console sub2grid:rollback -n
 
 This command will go through all subcolumn content elements and form fields and fix the `sc_parent` IDs of all elements respectively.
 
+Sets are rebuilt the way the front end rendered them, not from the stored `sc_parent` IDs: SubColumns drew visible
+elements only, in order &mdash; a start opened a row, a part the next column, an end closed the innermost open row.
+So visible elements are paired among themselves, invisible elements among themselves, and an invisible part that is
+left over joins the visible set around it (it never rendered, so this changes nothing on the page). Everything that
+remains is an incomplete series and is handled by `--cleanse` and `--force` as described below. Where the visibility
+within every set is consistent, the result is the same as pairing all elements in one pass.
+Only the `invisible` flag counts; start/stop publication windows are not taken into account.
+
 Run the following command to ensure that all subcolumns are in a consistent state:
 
 ```bash

@@ -224,16 +224,11 @@ class FixSubcolumnsCommand extends Command
         $currentParentTable = $overrideParentTable;
         $currentParentId = null;
 
-        $currentSetNestingLevel = -1;
-        $nestedStartIds = [];
-
         $processCurrentParent = function () use (
             $table,
             &$collector,
             &$currentParentTable,
-            &$currentParentId,
-            &$currentSetNestingLevel,
-            &$nestedStartIds
+            &$currentParentId
         ) {
             if ($currentParentTable === null || $currentParentId === null) {
                 return;
@@ -245,15 +240,13 @@ class FixSubcolumnsCommand extends Command
                     $table,
                     $currentParentId,
                     $currentParentTable,
-                    $collector[$currentParentTable][$currentParentId]
+                    $this->groupIntoSets($collector[$currentParentTable][$currentParentId])
                 );
             }
 
             unset($collector[$currentParentTable][$currentParentId]);
 
             $currentParentId = null;
-            $currentSetNestingLevel = -1;
-            $nestedStartIds = [];
         };
 
         while ($row = $result->fetchAssociative())
@@ -288,21 +281,7 @@ class FixSubcolumnsCommand extends Command
                 $currentParentId
             ));
 
-            if (\in_array($row['type'], Constants::TYPES_START, true))
-            {
-                $currentSetNestingLevel++;
-                $nestedStartIds[$currentSetNestingLevel] = $row['id'];
-            }
-
-            $nearestStartId = $nestedStartIds[$currentSetNestingLevel] ?? null;
-
-            $collector[$currentParentTable][$currentParentId][$nearestStartId] ??= [];
-            $collector[$currentParentTable][$currentParentId][$nearestStartId][] = $row;
-
-            if (\in_array($row['type'], Constants::TYPES_END, true))
-            {
-                $currentSetNestingLevel--;
-            }
+            $collector[$currentParentTable][$currentParentId][] = $row;
 
             $this->progress->advance();
         }
@@ -314,13 +293,132 @@ class FixSubcolumnsCommand extends Command
                 $table,
                 $currentParentId,
                 $currentParentTable,
-                $collector[$currentParentTable][$currentParentId]
+                $this->groupIntoSets($collector[$currentParentTable][$currentParentId])
             );
         }
 
         $this->progress->finish();
 
         return true;
+    }
+
+    /**
+     * Groups the sub-column elements of one parent into sets, the way the front end rendered them.
+     *
+     * SubColumns never looked at sc_parent when rendering: a visible start opened a row, a visible part
+     * opened the next column and a visible end closed the innermost open row -- invisible elements were
+     * simply not rendered. Pairing all elements in one pass, visible and invisible alike, can therefore
+     * disagree with what visitors saw: an invisible end closes a visible start, and the visible end that
+     * actually closed it on the page is left over as an "orphan" -- and deleted by --cleanse --force. The
+     * migrated grid then opens and never closes, and every following element ends up inside it.
+     *
+     * So:
+     *  1. visible elements are paired among themselves, in order;
+     *  2. invisible elements are paired among themselves, in order;
+     *  3. an invisible part left over from 2. joins the innermost visible set around it -- it never
+     *     rendered, so it changes nothing, and it keeps the column separator an editor hid;
+     *  4. everything else is left over as its own fragment, which prepareSet() treats as before.
+     *
+     * Where visibility is consistent within every set, this yields the same sets as a single pass.
+     * Only the invisible flag counts; start/stop publication windows are not taken into account.
+     *
+     * @param array<int, array> $rows The parent's sub-column elements, ordered by sorting.
+     * @return array<int, array> Sets and fragments, each ordered by sorting.
+     */
+    protected function groupIntoSets(array $rows): array
+    {
+        $isStart = static function (array $row): bool { return \in_array($row['type'], Constants::TYPES_START, true); };
+        $isEnd = static function (array $row): bool { return \in_array($row['type'], Constants::TYPES_END, true); };
+
+        /**
+         * Pairs the rows at the given positions in order.
+         * @return array{0: array<int, int[]>, 1: int[]} [set start position => member positions, unpaired positions]
+         */
+        $pair = static function (array $positions) use ($rows, $isStart, $isEnd): array {
+            $sets = [];
+            $open = [];
+            $unpaired = [];
+
+            foreach ($positions as $pos)
+            {
+                $row = $rows[$pos];
+
+                if ($isStart($row)) {
+                    $open[] = $pos;
+                    $sets[$pos] = [$pos];
+                    continue;
+                }
+
+                if (empty($open)) {
+                    $unpaired[] = $pos;
+                    continue;
+                }
+
+                $sets[\end($open)][] = $pos;
+
+                if ($isEnd($row)) {
+                    \array_pop($open);
+                }
+            }
+
+            // starts that were never closed are fragments, not sets
+            foreach ($open as $pos) {
+                \array_push($unpaired, ...$sets[$pos]);
+                unset($sets[$pos]);
+            }
+
+            return [$sets, $unpaired];
+        };
+
+        $visible = $invisible = [];
+        foreach ($rows as $pos => $row) {
+            if ($row['invisible']) $invisible[] = $pos; else $visible[] = $pos;
+        }
+
+        [$visibleSets, $leftovers] = $pair($visible);
+        [$invisibleSets, $invisibleLeftovers] = $pair($invisible);
+
+        foreach ($invisibleLeftovers as $pos)
+        {
+            $row = $rows[$pos];
+
+            if (!$isStart($row) && !$isEnd($row) && ($setPos = $this->enclosingSet($visibleSets, $pos)) !== null) {
+                $visibleSets[$setPos][] = $pos;
+                continue;
+            }
+
+            $leftovers[] = $pos;
+        }
+
+        $sets = [];
+        foreach ($visibleSets + $invisibleSets as $members) {
+            \sort($members);
+            $sets[] = \array_map(static function (int $pos) use ($rows) { return $rows[$pos]; }, $members);
+        }
+
+        foreach ($leftovers as $pos) {
+            $sets[] = [$rows[$pos]];
+        }
+
+        return $sets;
+    }
+
+    /**
+     * @param array<int, int[]> $sets set start position => member positions, the last one being the end
+     * @return int|null The start position of the innermost set whose start and end enclose the position.
+     */
+    protected function enclosingSet(array $sets, int $pos): ?int
+    {
+        $innermost = null;
+
+        foreach ($sets as $start => $members)
+        {
+            if ($start < $pos && \max($members) > $pos && ($innermost === null || $start > $innermost)) {
+                $innermost = $start;
+            }
+        }
+
+        return $innermost;
     }
 
     /**
