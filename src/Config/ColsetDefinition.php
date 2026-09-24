@@ -100,6 +100,20 @@ class ColsetDefinition implements \Countable
         return $this;
     }
 
+    /**
+     * The column set's serialized "CSS ID/class" field (tl_columnset.cssID).
+     */
+    public function getCssID(): ?string
+    {
+        return $this->cssID ?? null;
+    }
+
+    public function setCssID(?string $cssID): self
+    {
+        $this->cssID = $cssID;
+        return $this;
+    }
+
     public function setColumnsetRow(array $columnsetRow): self
     {
         $this->columnsetRow = $columnsetRow;

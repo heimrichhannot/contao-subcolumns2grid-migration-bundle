@@ -71,6 +71,7 @@ class MigrateDBColsManager extends AbstractMigrationManager
                 ->setInsideClass($row['insideClass'] ?? '')
                 ->setUseOutside((bool) $row['useOutside'])
                 ->setOutsideClass($row['outsideClass'] ?? '')
+                ->setCssID($row['cssID'] ?? null)
                 ->setColumnsetRow($row)
             ;
             $columnSets[$identifier] = $colset;

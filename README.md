@@ -129,6 +129,10 @@ Post-migration, verify affected pages and modules.
 - The migration will migrate database-defined subcolumn definitions to grid definitions of any theme you choose or
   a newly created one.
 - The migration will transform subcolumn content elements to grid content elements.
+- The migration will carry a database column set's "CSS ID/class" (`tl_columnset.cssID`) over to each start element
+  that has no CSS ID or class of its own. The SubcolumnsBootstrapBundle used the column set's value as a fallback in
+  exactly that case; grid definitions have no equivalent field. A rollback keeps the value on the element, which
+  renders the same.
 - The migration will not remove the subcolumns module or subcolumns bootstrap bundle.
 
 > [!TIP]

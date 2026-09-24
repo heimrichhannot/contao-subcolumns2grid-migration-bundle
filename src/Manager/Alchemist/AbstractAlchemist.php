@@ -2,11 +2,13 @@
 
 namespace HeimrichHannot\Subcolumns2Grid\Manager\Alchemist;
 
+use Contao\StringUtil;
 use Doctrine\DBAL\DBALException as DBALDBALException;
 use Doctrine\DBAL\Driver\Exception as DBALDriverException;
 use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Result;
+use HeimrichHannot\Subcolumns2Grid\Config\ColsetDefinition;
 use HeimrichHannot\Subcolumns2Grid\Config\ColsetElementDTO;
 use HeimrichHannot\Subcolumns2Grid\Config\MigrationConfig;
 use HeimrichHannot\Subcolumns2Grid\Exception\MigrationException;
@@ -67,7 +69,7 @@ abstract class AbstractAlchemist extends AbstractManager
             $count = \count($contentElements);
             $io->info("Found $count {$this->getName()} content elements.");
 
-            $this->transformColsetElements($contentElements);
+            $this->transformColsetElements($contentElements, $config);
 
             $io->success("Migrated $count {$this->getName()} content elements successfully.");
         }
@@ -85,7 +87,7 @@ abstract class AbstractAlchemist extends AbstractManager
             $count = \count($formFields);
             $io->info("Found $count {$this->getName()} form fields.");
 
-            $this->transformColsetElements($formFields);
+            $this->transformColsetElements($formFields, $config);
 
             $io->success("Migrated $count {$this->getName()} form fields successfully.");
         }
@@ -182,13 +184,13 @@ abstract class AbstractAlchemist extends AbstractManager
      * @throws DBALDBALException|DBALDriverException|DBALException
      * @throws MigrationException
      */
-    protected function transformColsetElements(array $colsetElements): void
+    protected function transformColsetElements(array $colsetElements, MigrationConfig $config): void
     {
         $this->connection->createSavepoint($uid = Helper::savepointId());
 
         foreach ($colsetElements as $parentId => $ceDTOs)
         {
-            $this->transformColsetIntoGrid($parentId, $ceDTOs);
+            $this->transformColsetIntoGrid($parentId, $ceDTOs, $config);
         }
 
         $this->connection->releaseSavepoint($uid);
@@ -197,10 +199,11 @@ abstract class AbstractAlchemist extends AbstractManager
     /**
      * @param int $parentId
      * @param ColsetElementDTO[] $ceDTOs
+     * @param MigrationConfig $config
      * @throws DBALDBALException|DBALDriverException|DBALException
      * @throws MigrationException
      */
-    protected function transformColsetIntoGrid(int $parentId, array $ceDTOs): void
+    protected function transformColsetIntoGrid(int $parentId, array $ceDTOs, MigrationConfig $config): void
     {
         if (empty($ceDTOs)) return;
 
@@ -295,6 +298,10 @@ abstract class AbstractAlchemist extends AbstractManager
 
         $stmt->executeStatement();
 
+        if ($table === 'tl_content') {
+            $this->inheritColumnsetCssID($start, $config->getSubcolumnDefinition($identifier));
+        }
+
         /* ======================================================= *\
          * Transform the child elements into grid columns and end. *
         \* ======================================================= */
@@ -343,5 +350,39 @@ abstract class AbstractAlchemist extends AbstractManager
         }
 
         $stmt->executeStatement();
+    }
+
+    /**
+     * Carries the column set's "CSS ID/class" over to the grid start element.
+     *
+     * subcolumns-bootstrap-bundle's ColsetStart rendered the column set's cssID (id and classes) on
+     * the row whenever the start element had no cssID of its own. A grid definition has no such
+     * field, so the value is written onto the element instead, under the same condition — an element
+     * with its own ID or classes keeps them, exactly as before.
+     *
+     * @throws DBALDBALException|DBALDriverException|DBALException
+     */
+    protected function inheritColumnsetCssID(ColsetElementDTO $start, ?ColsetDefinition $colset): void
+    {
+        $setCssID = StringUtil::deserialize($colset ? $colset->getCssID() : null, true);
+
+        if (!\array_filter($setCssID)) {
+            return;
+        }
+
+        $ownCssID = StringUtil::deserialize(
+            $this->connection->fetchOne('SELECT cssID FROM tl_content WHERE id = ?', [$start->getId()]),
+            true
+        );
+
+        if (\array_filter($ownCssID)) {
+            return;
+        }
+
+        $this->connection->update(
+            'tl_content',
+            ['cssID' => \serialize([$setCssID[0] ?? '', $setCssID[1] ?? ''])],
+            ['id' => $start->getId()]
+        );
     }
 }
